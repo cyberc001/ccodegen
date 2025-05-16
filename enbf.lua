@@ -1,0 +1,213 @@
+require "token"
+require "os"
+
+nodes = {
+	num = 1, str = 2,
+	call = 10, enum = 11, var = 12,
+	cast = 20,
+	un_op = 30, bin_op = 31, cond = 32, index = 33,
+	parantheses = 40
+}
+
+node = {}
+
+function node:new(o)
+	o = o or {}
+	setmetatable(o, self)
+	self.__index = self
+	return o
+end
+function node:__tostring()
+	return self.print and self:print() or "(generic node: type " .. self._type .. ", value [" .. tostring(self.value) .. "])"
+end
+
+function node:new_call(name, args)
+	return node:new({_type = nodes.call, value = args, name = name,
+	print = function(self)
+		local s = "(fun call " .. name .. ", args ["
+		for _, v in ipairs(args) do
+			s = s .. ", " .. tostring(v)
+		end
+		return s .. "])"
+	end})
+end
+function node:new_enum(name, value)
+	return node:new({_type = nodes.enum, value = value, name = name,
+	print = function(self)
+		return "(enum " .. name .. ", value " .. value .. ")"
+	end})
+end
+function node:new_var(name)
+	return node:new({_type = nodes.var, value = name,
+	print = function(self)
+		return "(var " .. name .. ")"
+	end})
+end
+function node:new_cast(cast_type, value)
+	return node:new({_type = nodes.cast, cast_type = cast_type, value = value,
+	print = function(self)
+		return "(cast type [" .. tostring(cast_type) .. "], value [" .. tostring(value) .. "])"
+	end})
+end
+
+function node:new_un_op(op, x, postfix)
+	return node:new({_type = nodes.un_op, op = op, value = x, postfix = postfix,
+	print = function(self)
+		return "(unary op " .. token_to_str(self.op) .. ", value [" .. tostring(self.value) .. (postfix and "], postfix)" or "])")
+	end})
+end
+function node:new_bin_op(op, x, y)
+	return node:new({_type = nodes.bin_op, op = op, value = {x, y},
+	print = function(self)
+		return "(bin op " .. token_to_str(self.op) .. ", values [" .. tostring(self.value[1]) .. ", " .. tostring(self.value[2]) .. "])"
+	end})
+end
+function node:new_cond(cond, a, b)
+	return node:new({_type = nodes.cond, value = {cond, a, b},
+	print = function(self)
+		return "(cond op, values [" .. tostring(self.value[1]) .. ", " .. tostring(self.value[2]) .. ", " .. tostring(self.value[3]) .. "])"
+	end})
+end
+function node:new_index(x, i)
+	return node:new({_type = nodes.index, value = {x, i},
+	print = function(self)
+		return "(index, values [" .. tostring(self.value[1]) .. ", " .. tostring(self.value[2]) .. "])"
+	end})
+end
+
+function expression(level, src, i, token, token_value, dbg)
+	dbg = dbg or ""
+
+	if not token then
+		print("line " .. line .. ": unexpected EOF of expression")
+		os.exit(1)
+	end
+
+	-- временные локальные переменные
+	local rnode, rnode2
+
+	-- для использования в бинарных операторах
+	local unit_node
+
+	print(dbg .. "expression", token, token_value)
+	if token == tokens.num then
+		local val = token_value
+		i, token, token_value = next_token(src, i)
+		unit_node = node:new({_type = nodes.num, value = val})
+	elseif token == tokens.char then
+		local val = token_value
+		i, token, token_value = next_token(src, i)
+		unit_node = node:new({_type = nodes.str, value = val})
+	elseif token == tokens.id then
+		local id = token_value.name
+		i, token, token_value = next_token(src, i)
+
+		if token == '(' then -- вызов функции
+			local args = {}
+			i, token, token_value = next_token(src, i)
+			while token ~= ')' do
+				rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+				table.insert(args, rnode)
+				print(dbg .. "call token", token, i)
+				if token == ',' then -- пропуск запятой
+					i, token, token_value = next_token(src, i)
+				end
+			end
+			i, token, token_value = next_token(src, i) -- пропуск закрывающей скобки ')'
+
+			unit_node = node:new_call(id, args)
+		elseif identifiers[id].class == classes.enum then
+			unit_node = node:new_enum(id, identifiers[token_value].value)
+		else
+			unit_node = node:new_var(id)
+		end
+	elseif token == '(' then
+		i, token, token_value = next_token(src, i)
+		print("]]]]", token, token_value.name, identifiers[token_value.name].class)
+		if token == tokens.id and (identifiers[token_value.name].class == classes._type or identifiers[token_value.name].class == classes.type_mod) then -- приведение типов
+			local cast_type = token_value
+			i, token, token_value = next_token(src, i)
+			while token == tokens.mul do -- пропуск указателей
+				i, token, token_value = next_token(src, i)
+			end
+
+			if token ~= ')' then
+				print("line " .. line .. ": expected ')' in type cast")
+				os.exit(1)
+			end
+
+			i, token, token_value = next_token(src, i) -- пропуск ')'
+			rnode, i, token, token_value = expression(tokens.inc, src, i, token, token_value, dbg .. "\t")
+			unit_node = node:new_cast(cast_type, rnode)
+		else -- скобки ()
+			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+			print(dbg .. "got expr for paranthesis", rnode)
+			if token ~= ')' then
+				print("line " .. line .. ": expected ')' in parantheses")
+				os.exit(1)
+			end
+			i, token, token_value = next_token(src, i) -- пропуск ')'
+			unit_node = node:new({_type = nodes.parantheses, value = rnode})
+		end
+	elseif token == tokens.mul or token == tokens._and or token == tokens.lnot or token == tokens._lnot or token == tokens.add or token == tokens.inc or token == tokens.dec then -- унарные операторы
+		local op = token
+		i, token, token_value = next_token(src, i)
+		rnode, i, token, token_value = expression(tokens.inc, src, i, token, token_value, dbg .. "\t")
+		unit_node = node:new_un_op(op, rnode)
+	elseif token == tokens.sub then -- отдельный случай с отрицательными числами
+		i, token, token_value = next_token(src, i)
+		if token == tokens.num then
+			local val = token_value
+			i, token, token_value = next_token(src, i)
+			unit_node = node:new({_type = nodes.num, value = -val})
+		else
+			rnode, i, token, token_value = expression(tokens.inc, src, i, token, token_value, dbg .. "\t")
+			unit_node = node:new_un_op(tokens.sub, rnode)
+		end
+	end
+
+	-- бинарные и постфиксные операторы
+	while type(token) == "number" and token >= level do
+		print(dbg .. "token", token)
+		if token == tokens.assign then
+			i, token, token_value = next_token(src, i) -- пропуск '='
+			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+			unit_node = node:new_bin_op(tokens.assign, unit_node, rnode)
+		elseif token == tokens.cond then
+			i, token, token_value = next_token(src, i) -- пропуск '?'
+			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+			print(dbg .. "GOT TOKEN", token)
+			if token ~= ':' then
+				print("line " .. line .. ": expected ':' in conditional operator")
+				os.exit(1)
+			end
+			i, token, token_value = next_token(src, i) -- пропуск ':'
+			rnode2, i, token, token_value = expression(tokens.cond, src, i, token, token_value, dbg .. "\t")
+			unit_node = node:new_cond(unit_node, rnode, rnode2)
+		elseif token >= tokens.lor and token <= tokens.mod then
+			local op = token
+			i, token, token_value = next_token(src, i)
+			rnode, i, token, token_value = expression(op + 1, src, i, token, token_value, dbg .. "\t")
+			unit_node = node:new_bin_op(op, unit_node, rnode)
+		elseif token == tokens.inc or token == tokens.dec then
+			unit_node = node:new_un_op(token, unit_node, true)
+			i, token, token_value = next_token(src, i)
+		elseif token == tokens.brack then
+			i, token, token_value = next_token(src, i)
+			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+			if token ~= ']' then
+				print("line " .. line .. ": expected ']' to close indexing operator")
+				os.exit(1)
+			end
+			i, token, token_value = next_token(src, i)
+			unit_node = node:new_index(unit_node, rnode)
+		else
+			print("line " .. line .. ": unexpected end of expression")
+			os.exit(1)
+		end
+		print(dbg .. "going next")
+	end
+
+	print(dbg .. "returning", token, token_value)
+	return unit_node, i, token, token_value
+end
