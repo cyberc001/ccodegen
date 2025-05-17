@@ -3,10 +3,12 @@ require "os"
 
 nodes = {
 	num = 1, str = 2,
-	call = 10, enum = 11, var = 12,
+	call = 10, enum = 11, var = 12, params = 13, decl = 14, func = 15, enum_decl = 16,
 	cast = 20,
 	un_op = 30, bin_op = 31, cond = 32, index = 33,
-	parantheses = 40
+	parantheses = 40, braces = 41,
+
+	_if = 50, _while = 51
 }
 
 node = {}
@@ -21,6 +23,7 @@ function node:__tostring()
 	return self.print and self:print() or "(generic node: type " .. self._type .. ", value [" .. tostring(self.value) .. "])"
 end
 
+---------------------[[ Выражения ]]---------------------
 function node:new_call(name, args)
 	return node:new({_type = nodes.call, value = args, name = name,
 	print = function(self)
@@ -75,6 +78,75 @@ function node:new_index(x, i)
 	end})
 end
 
+---------------------[[ Утверждения ]]---------------------
+function node:new_if(cond, body, else_body)
+	return node:new({_type = nodes._if, value = else_body and {body, else_body} or {body}, cond = cond,
+	print = function(self)
+		return "(if, cond [" .. tostring(self.cond) .. "], body [" .. tostring(self.value[1]) .. "]" .. (self.value[2] and ", else [" .. tostring(self.value[2]) .. "])" or ")")
+	end})
+end
+function node:new_while(cond, body)
+	return node:new({_type = nodes._while, value = body, cond = cond,
+	print = function(self)
+		return "(while, cond [" .. tostring(self.cond) .. "], body [" .. tostring(self.value) .. "])"
+	end})
+end
+function node:new_return(value)
+	return node:new({_type = nodes._return, value = value,
+	print = function(self)
+		return "(return" .. (self.value and ", value [" .. tostring(self.value) .. "])" or ")")
+	end})
+end
+function node:new_braces(statements)
+	return node:new({_type = nodes.braces, value = statements,
+	print = function(self)
+		local s = "(braces, statements ["
+		for _,v in ipairs(self.value) do
+			s = s .. ", " .. tostring(v)
+		end
+		return s .. "]"
+	end})
+end
+function node:new_decl(_type, id)
+	return node:new({_type = nodes.decl, _type = _type, value = id,
+	print = function(self)
+		return "(decl [" .. tostring(self._type) .. "] '" .. tostring(self.value) .. "')"
+	end})
+end
+
+
+---------------------[[ Другое ]]---------------------
+function node:new_enum_decl(decls, name)
+	return node:new({_type = nodes.enum_decl, value = decls, name = name,
+	print = function(self)
+		local s = "(enum '" .. tostring(self.name) .. "', declarations ["
+		for _,v in ipairs(self.value) do
+			s = s .. ", " .. tostring(v)
+		end
+		return s .. "]"
+	end})
+end
+
+function node:new_params(params)
+	return node:new({_type = nodes.params, value = params,
+	print = function(self)
+		local s = "(params ["
+		for _,v in ipairs(self.value) do
+			s = s .. ", " .. tostring(v)
+		end
+		return s .. "]"
+	end})
+end
+
+function node:new_func(params, body, name)
+	return node:new({_type = nodes.func, value = body, params = params, name = name,
+	print = function(self)
+		return "(func '" .. tostring(self.name) .. "', params [" .. tostring(self.params) .. "], body [" .. tostring(self.value) .. "])"
+	end})
+end
+
+
+
 function expression(level, src, i, token, token_value, dbg)
 	dbg = dbg or ""
 
@@ -116,19 +188,19 @@ function expression(level, src, i, token, token_value, dbg)
 			i, token, token_value = next_token(src, i) -- пропуск закрывающей скобки ')'
 
 			unit_node = node:new_call(id, args)
-		elseif identifiers[id].class == classes.enum then
+		elseif identifiers[id].class == classes.enum_decl then
 			unit_node = node:new_enum(id, identifiers[token_value].value)
 		else
 			unit_node = node:new_var(id)
 		end
 	elseif token == '(' then
 		i, token, token_value = next_token(src, i)
-		print("]]]]", token, token_value.name, identifiers[token_value.name].class)
 		if token == tokens.id and (identifiers[token_value.name].class == classes._type or identifiers[token_value.name].class == classes.type_mod) then -- приведение типов
 			local cast_type = token_value
 			i, token, token_value = next_token(src, i)
 			while token == tokens.mul do -- пропуск указателей
 				i, token, token_value = next_token(src, i)
+				cast_type.pointers = cast_type.pointers + 1
 			end
 
 			if token ~= ')' then
@@ -141,7 +213,6 @@ function expression(level, src, i, token, token_value, dbg)
 			unit_node = node:new_cast(cast_type, rnode)
 		else -- скобки ()
 			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
-			print(dbg .. "got expr for paranthesis", rnode)
 			if token ~= ')' then
 				print("line " .. line .. ": expected ')' in parantheses")
 				os.exit(1)
@@ -208,6 +279,272 @@ function expression(level, src, i, token, token_value, dbg)
 		print(dbg .. "going next")
 	end
 
-	print(dbg .. "returning", token, token_value)
+	print(dbg .. "expression returning", token, token_value)
 	return unit_node, i, token, token_value
+end
+
+function statement(src, i, token, token_value, dbg)
+	dbg = dbg or ""
+
+	if not token then
+		print("line " .. line .. ": unexpected EOF of statement")
+		os.exit(1)
+	end
+
+	-- временные локальные переменные
+	local rnode, rnode2
+
+	print(dbg .. "statement", token, token_value)
+	if token == tokens.id and (identifiers[token_value.name].class == classes._type or identifiers[token_value.name].class == classes.type_mod) then -- объявление переменной
+		local type_id = token_value
+		i, token, token_value = next_token(src, i)
+
+		while token == tokens.mul do -- пропуск указателей
+			i, token, token_value = next_token(src, i)
+			type_id.pointers = type_id.pointers + 1
+		end
+
+		if token ~= tokens.id then
+			print("line " .. line .. ": expected variable name in declaration")
+			os.exit(1)
+		end
+		local var_name = token_value.name
+		i, token, token_value = next_token(src, i)
+
+		if token == tokens.assign then
+			i, token, token_value = next_token(src, i)
+			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+			return node:new_bin_op(tokens.assign, node:new_decl(type_id, var_name), rnode)
+		else
+			return node:new_decl(type_id, var_name)
+		end
+	elseif token == tokens.id and token_value.name == "if" then
+		i, token, token_value = next_token(src, i)
+		if token ~= '(' then
+			print("line " .. line .. ": expected '(' after 'if'")
+			os.exit(1)
+		end
+		i, token, token_value = next_token(src, i)
+		rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+		local cond = rnode
+		if token ~= ')' then
+			print("line " .. line .. ": expected ')' after if condition")
+			os.exit(1)
+		end
+		i, token, token_value = next_token(src, i) -- пропуск ')'
+
+		rnode, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
+		if token == tokens.id and token_value.name == "else" then
+			i, token, token_value = next_token(src, i) -- пропуск ')'
+			rnode2, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
+		end
+		return node:new_if(cond, rnode, rnode2), i, token, token_value
+	elseif token == tokens.id and token_value.name == "while" then
+		i, token, token_value = next_token(src, i)
+		if token ~= '(' then
+			print("line " .. line .. ": expected '(' after 'while'")
+			os.exit(1)
+		end
+		rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+		if token ~= ')' then
+			print("line " .. line .. ": expected ')' after while condition")
+			os.exit(1)
+		end
+		i, token, token_value = next_token(src, i) -- пропуск ')'
+		rnode2, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
+		return node:new_while(rnode, rnode2), i, token, token_value
+	elseif token == '{' then
+		i, token, token_value = next_token(src, i) -- пропуск '{'
+		local statements = {}
+		while token ~= '}' do
+			rnode, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
+			if token == nil then
+				print("line " .. line .. ": curly brace '{' was never closed")
+				os.exit(1)
+			end
+			table.insert(statements, rnode)
+		end
+		i, token, token_value = next_token(src, i) -- пропуск '}'
+		return node:new_braces(statements), i, token, token_value
+	elseif token == tokens.id and token_value.name == "return" then
+		i, token, token_value = next_token(src, i)
+		if token ~= ';' then
+			rnode, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
+		end
+		if token ~= ';' then
+			print("line " .. line .. ": expected ';' after 'return'")
+			os.exit(1)
+		end
+		i, token, token_value = next_token(src, i) -- пропуск ';'
+		return node:new_return(rnode), i, token, token_value
+	elseif token == ';' then -- пустое утверждение
+		i, token, token_value = next_token(src, i)
+		return nil, i, token, token_value
+	else -- присваивание или вызов функции
+		rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+		if token ~= ';' then
+			print("line " .. line .. ": expected ';' after statement")
+			os.exit(1)
+		end
+		i, token, token_value = next_token(src, i)
+		return rnode, i, token, token_value
+	end
+end
+
+function enum_decl(src, i, token, token_value, dbg)
+	dbg = dbg or ""
+
+	if not token then
+		print("line " .. line .. ": unexpected EOF of enum declaration")
+		os.exit(1)
+	end
+
+	-- временные локальные переменные
+	local rnode
+
+	local decls = {}
+	while token ~= '}' do
+		if token ~= tokens.id then
+			print("line " .. line .. ": expected an identifier for enum declaration")
+			os.exit(1)
+		end
+		local id = token_value.name
+		if identifiers[id].class then
+			print("line " .. line .. ": attempting to re-define enum '" .. id .. "'")
+			os.exit(1)
+		end
+		i, token, token_value = next_token(src, i)
+
+		if token == tokens.assign then
+			i, token, token_value = next_token(src, i) -- пропуск '='
+			if token ~= tokens.num then
+				print("line " .. line .. ": enum should be initialized with a number")
+				os.exit(1)
+			end
+			table.insert(decls, node:new_bin_op(tokens.assign, node:new_var(id), node:new({_type = nodes.num, value = token_value})))
+			i, token, token_value = next_token(src, i)
+		else
+			table.insert(decls, node:new_var(id))
+		end
+
+		identifiers[id].class = classes.enum_decl
+		if token ~= ',' then
+			print("line " .. line .. ": expected ',' after enum declaration")
+			os.exit(1)
+		end
+		i, token, token_value = next_token(src, i)
+	end
+
+	return node:new_enum_decl(decls), i, token, token_value
+end
+
+function func_params(src, i, token, token_value, dbg)
+	dbg = dbg or ""
+
+	if not token then
+		print("line " .. line .. ": unexpected EOF of function parameters")
+		os.exit(1)
+	end
+
+	-- временные локальные переменные
+	local rnode
+
+	local params = {}
+	while token ~= ')' do
+		if token ~= tokens.id then
+			print("line " .. line .. ": expected a type identifier")
+			os.exit(1)
+		end
+		if identifiers[token_value.name].class ~= classes._type and identifiers[token_value.name].class ~= classes.type_mod then
+			print("line " .. line .. ": identifier is not a type")
+			os.exit(1)
+		end
+		local type_id = token_value
+
+		i, token, token_value = next_token(src, i)
+		while token == tokens.mul do -- пропуск указателей
+			i, token, token_value = next_token(src, i)
+			type_id.pointers = type_id.pointers + 1
+		end
+
+		if token ~= tokens.id then
+			print("line " .. line .. ": expected parameter name")
+			os.exit(1)
+		end
+
+		table.insert(params, node:new_decl(type_id, token_value.name))
+
+		i, token, token_value = next_token(src, i)
+		if token == ',' then
+			i, token, token_value = next_token(src, i)
+		end
+	end
+
+	return node:new_params(params), i, token, token_value
+end
+
+function func_decl(src, i, token, token_value, dbg)
+	dbg = dbg or ""
+
+	if not token then
+		print("line " .. line .. ": unexpected EOF of function declaration")
+		os.exit(1)
+	end
+
+	local params, body
+
+	if token ~= '(' then
+		print("line " .. line .. ": expected '(' in function declaration")
+		os.exit(1)
+	end
+	i, token, token_value = next_token(src, i)
+	params, i, token, token_value = func_params(src, i, token, token_value, dbg .. "\t")
+	print("TOKEN", token)
+	if token ~= ')' then
+		print("line " .. line .. ": expected ')' in function declaration")
+		os.exit(1)
+	end
+	i, token, token_value = next_token(src, i)
+
+	if token ~= '{' then
+		print("line " .. line .. ": expected '{' in function declaration")
+		os.exit(1)
+	end
+	body, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
+
+	return node:new_func(params, body)
+end
+
+function global_decl(src, i, token, token_value, dbg)
+	dbg = dbg or ""
+
+	if not token then
+		print("line " .. line .. ": unexpected EOF of global declaration")
+		os.exit(1)
+	end
+
+	-- временные локальные переменные
+	local rnode
+
+	if token == tokens.id and token_value.name == "enum" then
+		i, token, token_value = next_token(src, i)
+		local enum_id
+		if token ~= '{' then
+			i, token, token_value = next_token(src, i)
+			if token ~= tokens.id then
+				print("line " .. line .. ": expected enum identifier in global declaration")
+				os.exit(1)
+			end
+			enum_id = token_value.name
+		end
+
+		if token == '{' then -- тела может и не быть
+			i, token, token_value = next_token(src, i)
+			rnode, i, token, token_value = enum_decl(src, i, token, token_value, dbg .. "\t")
+			i, token, token_value = next_token(src, i) -- пропуск '}'
+			rnode.name = enum_id
+			return rnode
+		end
+		return node:new_enum_decl({}, enum_id)
+	end
 end

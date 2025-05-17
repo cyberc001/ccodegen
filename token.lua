@@ -1,6 +1,6 @@
 tokens = {
 	num = 1, fun = 2, sys = 3, glo = 4, loc = 5, id = 6,
-	char = 7, _else = 8, enum = 9, _if = 10, int = 11, _return = 12, sizeof = 13, _while = 14,
+	char = 7,
 	assign = 15, cond = 16, lor = 17, land = 18, _or = 19, xor = 20, _and = 21, eq = 22, ne = 23, lt = 24, gt = 25, le = 26, ge = 27, shl = 28, shr = 29, add = 30, sub = 31, mul = 32, div = 33, mod = 34, lnot = 35, _not = 36, inc = 37, dec = 38, brack = 39
 }
 
@@ -35,7 +35,8 @@ function token_to_str(token)
 end
 
 classes = {
-	enum = 1, _type = 2, type_mod = 3
+	enum = 1, enum_decl = 2, _type = 3, type_mod = 4,
+	keyword = 4
 }
 
 function is_valid_id_char(c_code, begin)
@@ -52,6 +53,8 @@ end
 id = {}
 function id:new(o)
 	o = o or {}
+	o.mods = o.mods or {}
+	o.pointers = o.pointers or 0
 	setmetatable(o, self)
 	self.__index = self
 	return o
@@ -61,43 +64,29 @@ function id:__tostring()
 	for _, v in ipairs(self.mods) do
 		s = s .. v .. " "
 	end
-	return s .. self.name
+	s = s .. self.name
+	for i = 1, self.pointers do
+		s = s .. "*"
+	end
+	return s
 end
 
 line = 1
 identifiers = {
-	const = {
-		class = classes.type_mod
-	},
-	short = {
-		class = classes.type_mod
-	},
-	long = {
-		class = classes.type_mod
-	},
-
-	void = {
-		class = classes._type
-	},
-
-	int = {
-		class = classes._type
-	},
-	char = {
-		class = classes._type
-	},
-	
-	float = {
-		class = classes._type
-	},
-	double = {
-		class = classes._type
-	},
-
-	size_t = {
-		class = classes._type
-	}
+	const = { class = classes.type_mod },
+	short = { class = classes.type_mod },
+	long = { class = classes.type_mod },
+	void = { class = classes._type },
+	int = { class = classes._type },
+	char = { class = classes._type },
+	float = { class = classes._type },
+	double = { class = classes._type },
+	size_t = { class = classes._type }
 }
+identifiers["if"] = { class = classes.keyword }
+identifiers["else"] = { class = classes.keyword }
+identifiers["while"] = { class = classes.keyword }
+identifiers["return"] = { class = classes.keyword }
 
 function next_char(src, i)
 	return i + 1, src:sub(i, i), string.byte(src:sub(i, i))
@@ -137,13 +126,10 @@ function next_token(src, i)
 				if not identifiers[id_name] then
 					identifiers[id_name] = {}
 				end
-				print("INSERT", id_name)
 				table.insert(mods, id_name)
 			until identifiers[id_name].class ~= classes.type_mod
 			
 			mods[#mods] = nil
-
-			print("NAME", id_name, "MODES", mods[1])
 
 			return i - 1, tokens.id, id:new({name = id_name, mods = mods})
 		elseif is_number(c_code) then -- распарсить число
