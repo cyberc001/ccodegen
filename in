@@ -1,4 +1,4 @@
-(const int* arr, size_t arr_ln) {
+void* test(const int* arr, size_t arr_ln) {
 	next(arr);
 	++arr_ln;
 	arr = arr + arr_ln;

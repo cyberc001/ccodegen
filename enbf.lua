@@ -6,7 +6,7 @@ nodes = {
 	call = 10, enum = 11, var = 12, params = 13, decl = 14, func = 15, enum_decl = 16,
 	cast = 20,
 	un_op = 30, bin_op = 31, cond = 32, index = 33,
-	parantheses = 40, braces = 41,
+	parantheses = 40, braces = 41, comma = 42,
 
 	_if = 50, _while = 51
 }
@@ -101,6 +101,16 @@ function node:new_braces(statements)
 	return node:new({_type = nodes.braces, value = statements,
 	print = function(self)
 		local s = "(braces, statements ["
+		for _,v in ipairs(self.value) do
+			s = s .. ", " .. tostring(v)
+		end
+		return s .. "]"
+	end})
+end
+function node:new_comma(statements)
+	return node:new({_type = nodes.comma, value = statements,
+	print = function(self)
+		local s = "(comma, statements ["
 		for _,v in ipairs(self.value) do
 			s = s .. ", " .. tostring(v)
 		end
@@ -314,9 +324,9 @@ function statement(src, i, token, token_value, dbg)
 		if token == tokens.assign then
 			i, token, token_value = next_token(src, i)
 			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
-			return node:new_bin_op(tokens.assign, node:new_decl(type_id, var_name), rnode)
+			return node:new_bin_op(tokens.assign, node:new_decl(type_id, var_name), rnode), i, token, token_value
 		else
-			return node:new_decl(type_id, var_name)
+			return node:new_decl(type_id, var_name), i, token, token_value
 		end
 	elseif token == tokens.id and token_value.name == "if" then
 		i, token, token_value = next_token(src, i)
@@ -547,4 +557,55 @@ function global_decl(src, i, token, token_value, dbg)
 		end
 		return node:new_enum_decl({}, enum_id)
 	end
+	
+	local type_id = token_value
+	i, token, token_value = next_token(src, i)
+
+	while token == tokens.mul do -- пропуск указателей
+		i, token, token_value = next_token(src, i)
+		type_id.pointers = type_id.pointers + 1
+	end
+
+	local unit_nodes = {}
+
+	if token ~= tokens.id then
+		print("line " .. line .. ": expected variable or function name in global declaration")
+		os.exit(1)
+	end
+	local decl_name = token_value.name
+	i, token, token_value = next_token(src, i)
+
+	if token == tokens.assign then -- объявление переменной с инициализацией
+		i, token, token_value = next_token(src, i)
+		rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+		unit_nodes[1] = node:new_bin_op(tokens.assign, node:new_decl(type_id, decl_name), rnode)
+	elseif token == '(' then -- объявление функции
+		rnode, i, token, token_value = func_decl(src, i, token, token_value, dbg .. "\t")
+		rnode.name = decl_name
+		return rnode, i, token, token_value
+	else -- объявление переменной
+		unit_nodes[1] = node:new_decl(type_id, decl_name)
+	end
+
+	while token ~= ';' and token ~= '}' do
+		if token ~= tokens.id then
+			print("line " .. line .. ": expected variable or function name in global declaration")
+			os.exit(1)
+		end
+		local decl_name = token_value.name
+		i, token, token_value = next_token(src, i)
+
+		if token == tokens.assign then -- объявление переменной с инициализацией
+			i, token, token_value = next_token(src, i)
+			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+			table.insert(unit_nodes, node:new_bin_op(tokens.assign, node:new_var(decl_name), rnode))
+		elseif token == '(' then -- объявление функции
+			print("line " .. line .. ": unexpected function in global declaration")
+			os.exit(1)
+		else -- объявление переменной
+			table.insert(unit_nodes, node:new_var(decl_name))
+		end
+	end
+
+	return node:new_comma(unit_nodes), i, token, token_value
 end
