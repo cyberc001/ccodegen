@@ -2,7 +2,7 @@ require "token"
 require "os"
 
 nodes = {
-	num = 1, str = 2,
+	num = 1, str = 2, char = 3,
 	call = 10, enum = 11, var = 12, params = 13, decl = 14, func = 15, enum_decl = 16,
 	cast = 20,
 	un_op = 30, bin_op = 31, cond = 32, index = 33,
@@ -20,61 +20,72 @@ function node:new(o)
 	return o
 end
 function node:__tostring()
-	return self.print and self:print() or "(generic node: type " .. self._type .. ", value [" .. tostring(self.value) .. "])"
+	self.dbg = self.dbg or ""
+	return self.dbg .. (self.print and self:print() or "(generic node: type " .. self._type .. ", value [" .. tostring(self.value) .. "])")
 end
 
 ---------------------[[ Выражения ]]---------------------
 function node:new_call(name, args)
 	return node:new({_type = nodes.call, value = args, name = name,
 	print = function(self)
-		local s = "(fun call " .. name .. ", args ["
+		local s = "(fun call '" .. name .. "'\n" .. self.dbg .. "\targs [\n"
 		for _, v in ipairs(args) do
-			s = s .. ", " .. tostring(v)
+			v.dbg = self.dbg .. "\t"
+			s = s .. tostring(v) .. ",\n"
 		end
-		return s .. "])"
+		return s .. self.dbg .. "])"
 	end})
 end
 function node:new_enum(name, value)
 	return node:new({_type = nodes.enum, value = value, name = name,
 	print = function(self)
-		return "(enum " .. name .. ", value " .. value .. ")"
+		return "(enum '" .. name .. "', value " .. value .. ")"
 	end})
 end
 function node:new_var(name)
 	return node:new({_type = nodes.var, value = name,
 	print = function(self)
-		return "(var " .. name .. ")"
+		return "(var '" .. name .. "')"
 	end})
 end
 function node:new_cast(cast_type, value)
 	return node:new({_type = nodes.cast, cast_type = cast_type, value = value,
 	print = function(self)
-		return "(cast type [" .. tostring(cast_type) .. "], value [" .. tostring(value) .. "])"
+		self.value.dbg = self.dbg .. "\t"
+		return "(cast\n" .. self.dbg .. "\ttype " .. tostring(self.cast_type) .. "\n" .. self.dbg .. "\tvalue\n" .. tostring(value) .. "\n" .. self.dbg .. ")"
 	end})
 end
 
 function node:new_un_op(op, x, postfix)
 	return node:new({_type = nodes.un_op, op = op, value = x, postfix = postfix,
 	print = function(self)
-		return "(unary op " .. token_to_str(self.op) .. ", value [" .. tostring(self.value) .. (postfix and "], postfix)" or "])")
+		self.value.dbg = self.dbg .. "\t"
+		return "(unary op " .. token_to_str(self.op) .. "\n" .. self.dbg .. "\tvalue\n" .. tostring(self.value) .. "\n" .. self.dbg .. (postfix and "postfix)" or ")")
 	end})
 end
 function node:new_bin_op(op, x, y)
 	return node:new({_type = nodes.bin_op, op = op, value = {x, y},
 	print = function(self)
-		return "(bin op " .. token_to_str(self.op) .. ", values [" .. tostring(self.value[1]) .. ", " .. tostring(self.value[2]) .. "])"
+		self.value[1].dbg = self.dbg .. "\t"
+		self.value[2].dbg = self.dbg .. "\t"
+		return "(bin op " .. token_to_str(self.op) .. "\n\t" .. self.dbg .. "values\n" .. tostring(self.value[1]) .. ",\n" .. tostring(self.value[2]) .. "\n" .. self.dbg .. ")"
 	end})
 end
 function node:new_cond(cond, a, b)
 	return node:new({_type = nodes.cond, value = {cond, a, b},
 	print = function(self)
-		return "(cond op, values [" .. tostring(self.value[1]) .. ", " .. tostring(self.value[2]) .. ", " .. tostring(self.value[3]) .. "])"
+		self.value[1].dbg = self.dbg .. "\t"
+		self.value[2].dbg = self.dbg .. "\t"
+		self.value[3].dbg = self.dbg .. "\t"
+		return "(cond op\n" .. self.dbg .. "\tvalues\n" .. tostring(self.value[1]) .. ",\n" .. tostring(self.value[2]) .. ",\n" .. tostring(self.value[3]) .. "\n" .. self.dbg .. ")"
 	end})
 end
 function node:new_index(x, i)
 	return node:new({_type = nodes.index, value = {x, i},
 	print = function(self)
-		return "(index, values [" .. tostring(self.value[1]) .. ", " .. tostring(self.value[2]) .. "])"
+		self.value[1].dbg = self.dbg .. "\t"
+		self.value[2].dbg = self.dbg .. "\t"
+		return "(index, values\n" .. tostring(self.value[1]) .. ",\n" .. tostring(self.value[2]) .. "\n" .. self.dbg .. ")"
 	end})
 end
 
@@ -82,39 +93,51 @@ end
 function node:new_if(cond, body, else_body)
 	return node:new({_type = nodes._if, value = else_body and {body, else_body} or {body}, cond = cond,
 	print = function(self)
-		return "(if, cond [" .. tostring(self.cond) .. "], body [" .. tostring(self.value[1]) .. "]" .. (self.value[2] and ", else [" .. tostring(self.value[2]) .. "])" or ")")
+		self.cond.dbg = self.dbg .. "\t"
+		self.value[1].dbg = self.dbg .. "\t"
+		if self.value[2] then
+			self.value[2].dbg = self.dbg .. "\t"
+		end
+		return "(if\n" .. self.dbg .. "\tcond\n" .. tostring(self.cond) .. "\n" .. self.dbg .. "\tbody\n" .. tostring(self.value[1]) .. ",\n" .. self.dbg .. (self.value[2] and "\telse\n" .. tostring(self.value[2]) .. "\n" .. self.dbg .. "\t)" or "\n" .. self.dbg .. ")")
 	end})
 end
 function node:new_while(cond, body)
 	return node:new({_type = nodes._while, value = body, cond = cond,
 	print = function(self)
-		return "(while, cond [" .. tostring(self.cond) .. "], body [" .. tostring(self.value) .. "])"
+		self.cond.dbg = self.dbg .. "\t"
+		self.value.dbg = self.dbg .. "\t"
+		return "(while\n" .. self.dbg .. "\tcond\n" .. tostring(self.cond) .. ",\n" .. self.dbg .. "\tbody\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)"
 	end})
 end
 function node:new_return(value)
 	return node:new({_type = nodes._return, value = value,
 	print = function(self)
-		return "(return" .. (self.value and ", value [" .. tostring(self.value) .. "])" or ")")
+		if self.value then
+			self.value.dbg = self.dbg .. "\t"
+		end
+		return "(return" .. (self.value and "\n" .. self.dbg .. "\tvalue\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)" or ")")
 	end})
 end
 function node:new_braces(statements)
 	return node:new({_type = nodes.braces, value = statements,
 	print = function(self)
-		local s = "(braces, statements ["
+		local s = "(braces\n" .. self.dbg .. "\tstatements [\n"
 		for _,v in ipairs(self.value) do
-			s = s .. ", " .. tostring(v)
+			v.dbg = self.dbg .. "\t"
+			s = s ..  tostring(v) .. ",\n"
 		end
-		return s .. "]"
+		return s .. self.dbg .. "\t])"
 	end})
 end
 function node:new_comma(statements)
 	return node:new({_type = nodes.comma, value = statements,
 	print = function(self)
-		local s = "(comma, statements ["
+		local s = "(comma\n" .. self.dbg .. "\tstatements [\n"
 		for _,v in ipairs(self.value) do
-			s = s .. ", " .. tostring(v)
+			v.dbg = self.dbg .. "\t"
+			s = s ..  tostring(v) .. ",\n"
 		end
-		return s .. "]"
+		return s .. self.dbg .. "\t])"
 	end})
 end
 function node:new_decl(_type, id)
@@ -129,29 +152,33 @@ end
 function node:new_enum_decl(decls, name)
 	return node:new({_type = nodes.enum_decl, value = decls, name = name,
 	print = function(self)
-		local s = "(enum '" .. tostring(self.name) .. "', declarations ["
+		local s = "(enum\n" .. self.dbg .. "\tdeclarations [\n"
 		for _,v in ipairs(self.value) do
-			s = s .. ", " .. tostring(v)
+			v.dbg = self.dbg .. "\t"
+			s = s ..  tostring(v) .. ",\n"
 		end
-		return s .. "]"
+		return s .. self.dbg .. "\t])"
 	end})
 end
 
 function node:new_params(params)
 	return node:new({_type = nodes.params, value = params,
 	print = function(self)
-		local s = "(params ["
+		local s = "(params [\n"
 		for _,v in ipairs(self.value) do
-			s = s .. ", " .. tostring(v)
+			v.dbg = self.dbg .. "\t"
+			s = s ..  tostring(v) .. ",\n"
 		end
-		return s .. "]"
+		return s .. self.dbg .. "\t])"
 	end})
 end
 
 function node:new_func(params, body, name)
 	return node:new({_type = nodes.func, value = body, params = params, name = name,
 	print = function(self)
-		return "(func '" .. tostring(self.name) .. "', params [" .. tostring(self.params) .. "], body [" .. tostring(self.value) .. "])"
+		self.value.dbg = self.dbg .. "\t"
+		self.params.dbg = self.dbg .. "\t"
+		return "(func '" .. tostring(self.name) .. "'\n" .. self.dbg .. "\tparams\n" .. tostring(self.params) .. "\n" .. self.dbg .. "\tbody\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)"
 	end})
 end
 
@@ -177,6 +204,11 @@ function expression(level, src, i, token, token_value, dbg)
 		i, token, token_value = next_token(src, i)
 		unit_node = node:new({_type = nodes.num, value = val})
 	elseif token == tokens.char then
+		local val = token_value
+		i, token, token_value = next_token(src, i)
+		unit_node = node:new({_type = nodes.char, value = val})
+		print("TOKEN", unit_node)
+	elseif token == tokens.str then
 		local val = token_value
 		i, token, token_value = next_token(src, i)
 		unit_node = node:new({_type = nodes.str, value = val})
@@ -257,7 +289,6 @@ function expression(level, src, i, token, token_value, dbg)
 		elseif token == tokens.cond then
 			i, token, token_value = next_token(src, i) -- пропуск '?'
 			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
-			print(dbg .. "GOT TOKEN", token)
 			if token ~= ':' then
 				print("line " .. line .. ": expected ':' in conditional operator")
 				os.exit(1)
@@ -355,6 +386,7 @@ function statement(src, i, token, token_value, dbg)
 			print("line " .. line .. ": expected '(' after 'while'")
 			os.exit(1)
 		end
+		i, token, token_value = next_token(src, i)
 		rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
 		if token ~= ')' then
 			print("line " .. line .. ": expected ')' after while condition")
@@ -375,6 +407,7 @@ function statement(src, i, token, token_value, dbg)
 			table.insert(statements, rnode)
 		end
 		i, token, token_value = next_token(src, i) -- пропуск '}'
+		print(dbg .. "braces returning", token, token_value)
 		return node:new_braces(statements), i, token, token_value
 	elseif token == tokens.id and token_value.name == "return" then
 		i, token, token_value = next_token(src, i)
@@ -413,6 +446,7 @@ function enum_decl(src, i, token, token_value, dbg)
 	local rnode
 
 	local decls = {}
+	print(dbg .. "enum, decl", token, token_value)
 	while token ~= '}' do
 		if token ~= tokens.id then
 			print("line " .. line .. ": expected an identifier for enum declaration")
@@ -460,6 +494,7 @@ function func_params(src, i, token, token_value, dbg)
 	local rnode
 
 	local params = {}
+	print(dbg .. "func params", token, token_value)
 	while token ~= ')' do
 		if token ~= tokens.id then
 			print("line " .. line .. ": expected a type identifier")
@@ -503,13 +538,13 @@ function func_decl(src, i, token, token_value, dbg)
 
 	local params, body
 
+	print(dbg .. "func decl", token, token_value)
 	if token ~= '(' then
 		print("line " .. line .. ": expected '(' in function declaration")
 		os.exit(1)
 	end
 	i, token, token_value = next_token(src, i)
 	params, i, token, token_value = func_params(src, i, token, token_value, dbg .. "\t")
-	print("TOKEN", token)
 	if token ~= ')' then
 		print("line " .. line .. ": expected ')' in function declaration")
 		os.exit(1)
@@ -521,8 +556,9 @@ function func_decl(src, i, token, token_value, dbg)
 		os.exit(1)
 	end
 	body, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
+	print(dbg .. "tokens after body", token, token_value)
 
-	return node:new_func(params, body)
+	return node:new_func(params, body), i and i - 1 or nil, token, token_value -- грязный хак (фигурные скобки{} возвращают токен следующий за ними, но нам нужно вернуть })
 end
 
 function global_decl(src, i, token, token_value, dbg)
@@ -536,6 +572,7 @@ function global_decl(src, i, token, token_value, dbg)
 	-- временные локальные переменные
 	local rnode
 
+	print(dbg .. "global decl", token, token_value)
 	if token == tokens.id and token_value.name == "enum" then
 		i, token, token_value = next_token(src, i)
 		local enum_id
@@ -553,9 +590,9 @@ function global_decl(src, i, token, token_value, dbg)
 			rnode, i, token, token_value = enum_decl(src, i, token, token_value, dbg .. "\t")
 			i, token, token_value = next_token(src, i) -- пропуск '}'
 			rnode.name = enum_id
-			return rnode
+			return rnode, i, token, token_value
 		end
-		return node:new_enum_decl({}, enum_id)
+		return node:new_enum_decl({}, enum_id), i, token, token_value
 	end
 	
 	local type_id = token_value
@@ -581,6 +618,7 @@ function global_decl(src, i, token, token_value, dbg)
 		unit_nodes[1] = node:new_bin_op(tokens.assign, node:new_decl(type_id, decl_name), rnode)
 	elseif token == '(' then -- объявление функции
 		rnode, i, token, token_value = func_decl(src, i, token, token_value, dbg .. "\t")
+		print(dbg .. "tokens after func decl", token, token_value)
 		rnode.name = decl_name
 		return rnode, i, token, token_value
 	else -- объявление переменной

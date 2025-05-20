@@ -1,6 +1,6 @@
 tokens = {
 	num = 1, fun = 2, sys = 3, glo = 4, loc = 5, id = 6,
-	char = 7,
+	char = 7, str = 8,
 	assign = 15, cond = 16, lor = 17, land = 18, _or = 19, xor = 20, _and = 21, eq = 22, ne = 23, lt = 24, gt = 25, le = 26, ge = 27, shl = 28, shr = 29, add = 30, sub = 31, mul = 32, div = 33, mod = 34, lnot = 35, _not = 36, inc = 37, dec = 38, brack = 39
 }
 
@@ -36,7 +36,7 @@ end
 
 classes = {
 	enum = 1, enum_decl = 2, _type = 3, type_mod = 4,
-	keyword = 4
+	keyword = 5
 }
 
 function is_valid_id_char(c_code, begin)
@@ -114,7 +114,6 @@ function next_token(src, i)
 				end
 
 				if not is_valid_id_char(c_code, true) then
-					print("invalid", c_code)
 					break
 				end
 
@@ -180,7 +179,7 @@ function next_token(src, i)
 				end
 			end
 
-			return i, tokens.char, src:sub(beg_i, i - 1)
+			return i, beg_c == '"' and tokens.str or tokens.char, src:sub(beg_i, i - 1)
 		elseif c == '=' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '=' then
