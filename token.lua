@@ -93,7 +93,7 @@ function next_char(src, i)
 end
 
 function new_token_ctx(i, ws, token, token_value)
-	return {i = i, token = token, token_value = token_value, ws = ws}
+	return {i = i, token = token, token_value = token_value, ws = ws or ""}
 end
 
 function next_token(src, ctx)
@@ -105,6 +105,7 @@ function next_token(src, ctx)
 
 		if c == '\n' then
 			line = line + 1
+			ws = ws .. c
 		elseif is_ws(c) then -- пропуск пробелов
 			ws = ws .. c
 		elseif c == '#' then -- пропустить макросы
@@ -272,4 +273,5 @@ function next_token(src, ctx)
 			return new_token_ctx(i, ws, c)
 		end
 	end
+	return new_token_ctx()
 end

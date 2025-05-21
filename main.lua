@@ -11,8 +11,9 @@ while true do
 	node, ctx = global_decl(src, ctx)
 	print("----------------")
 	print(node:src())
+	print(node)
 	--print(node, i, token, token_val, type(token_val) == "table" and token_val.name or '')
-	if i == nil then break end
+	if ctx.i == nil then break end
 	ctx = next_token(src, ctx)
-	if i == nil then break end
+	if ctx.i == nil then break end
 end
