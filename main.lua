@@ -10,7 +10,8 @@ i, token, token_val = next_token(src, i)
 while true do
 	node, i, token, token_val = global_decl(src, i, token, token_val)
 	print("----------------")
-	print(node, i, token, token_val, type(token_val) == "table" and token_val.name or '')
+	print(node:src())
+	--print(node, i, token, token_val, type(token_val) == "table" and token_val.name or '')
 	if i == nil then break end
 	i, token, token_val = next_token(src, i)
 	if i == nil then break end

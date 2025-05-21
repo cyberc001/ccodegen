@@ -23,29 +23,51 @@ function node:__tostring()
 	self.dbg = self.dbg or ""
 	return self.dbg .. (self.print and self:print() or "(generic node: type " .. self._type .. ", value [" .. tostring(self.value) .. "])")
 end
+-- возвращает исходный код узла
+function node:src()
+	return tostring(self.value)
+end
 
 ---------------------[[ Выражения ]]---------------------
 function node:new_call(name, args)
 	return node:new({_type = nodes.call, value = args, name = name,
 	print = function(self)
 		local s = "(fun call '" .. name .. "'\n" .. self.dbg .. "\targs [\n"
-		for _, v in ipairs(args) do
+		for _, v in ipairs(self.value) do
 			v.dbg = self.dbg .. "\t"
 			s = s .. tostring(v) .. ",\n"
 		end
 		return s .. self.dbg .. "])"
+	end,
+	src = function(self)
+		s = name .. "("
+		if #self.value > 0 then
+			for i, v in ipairs(self.value) do
+				if i > 1 then
+					s = s .. ","
+				end
+				s = s .. v:src()
+			end
+		end
+		return s .. ")"
 	end})
 end
 function node:new_enum(name, value)
 	return node:new({_type = nodes.enum, value = value, name = name,
 	print = function(self)
 		return "(enum '" .. name .. "', value " .. value .. ")"
+	end,
+	src = function(self)
+		return name .. " = " .. self.value:src() 
 	end})
 end
 function node:new_var(name)
 	return node:new({_type = nodes.var, value = name,
 	print = function(self)
 		return "(var '" .. name .. "')"
+	end,
+	src = function(self)
+		return self.value
 	end})
 end
 function node:new_cast(cast_type, value)
@@ -53,6 +75,9 @@ function node:new_cast(cast_type, value)
 	print = function(self)
 		self.value.dbg = self.dbg .. "\t"
 		return "(cast\n" .. self.dbg .. "\ttype " .. tostring(self.cast_type) .. "\n" .. self.dbg .. "\tvalue\n" .. tostring(value) .. "\n" .. self.dbg .. ")"
+	end,
+	src = function(self)
+		return "(" .. self.cast_type:src() .. ")" .. self.value:src()
 	end})
 end
 
@@ -61,6 +86,9 @@ function node:new_un_op(op, x, postfix)
 	print = function(self)
 		self.value.dbg = self.dbg .. "\t"
 		return "(unary op " .. token_to_str(self.op) .. "\n" .. self.dbg .. "\tvalue\n" .. tostring(self.value) .. "\n" .. self.dbg .. (postfix and "postfix)" or ")")
+	end,
+	src = function(self)
+		return token_to_str(self.op) .. self.value:src()
 	end})
 end
 function node:new_bin_op(op, x, y)
@@ -69,6 +97,9 @@ function node:new_bin_op(op, x, y)
 		self.value[1].dbg = self.dbg .. "\t"
 		self.value[2].dbg = self.dbg .. "\t"
 		return "(bin op " .. token_to_str(self.op) .. "\n\t" .. self.dbg .. "values\n" .. tostring(self.value[1]) .. ",\n" .. tostring(self.value[2]) .. "\n" .. self.dbg .. ")"
+	end,
+	src = function(self)
+		return self.value[1]:src() .. token_to_str(self.op) .. self.value[2]:src()
 	end})
 end
 function node:new_cond(cond, a, b)
@@ -78,6 +109,9 @@ function node:new_cond(cond, a, b)
 		self.value[2].dbg = self.dbg .. "\t"
 		self.value[3].dbg = self.dbg .. "\t"
 		return "(cond op\n" .. self.dbg .. "\tvalues\n" .. tostring(self.value[1]) .. ",\n" .. tostring(self.value[2]) .. ",\n" .. tostring(self.value[3]) .. "\n" .. self.dbg .. ")"
+	end,
+	src = function(self)
+		return self.value[1]:src() .. "?" .. self.value[2]:src() .. ":" .. self.value[3]:src()
 	end})
 end
 function node:new_index(x, i)
@@ -86,6 +120,9 @@ function node:new_index(x, i)
 		self.value[1].dbg = self.dbg .. "\t"
 		self.value[2].dbg = self.dbg .. "\t"
 		return "(index, values\n" .. tostring(self.value[1]) .. ",\n" .. tostring(self.value[2]) .. "\n" .. self.dbg .. ")"
+	end,
+	src = function(self)
+		return self.value[1]:src() .. "[" .. self.value[2]:src() .. "]"
 	end})
 end
 
@@ -99,6 +136,9 @@ function node:new_if(cond, body, else_body)
 			self.value[2].dbg = self.dbg .. "\t"
 		end
 		return "(if\n" .. self.dbg .. "\tcond\n" .. tostring(self.cond) .. "\n" .. self.dbg .. "\tbody\n" .. tostring(self.value[1]) .. ",\n" .. self.dbg .. (self.value[2] and "\telse\n" .. tostring(self.value[2]) .. "\n" .. self.dbg .. "\t)" or "\n" .. self.dbg .. ")")
+	end,
+	src = function(self)
+		return "if(" .. self.cond:src() .. ")" .. self.value[1]:src() .. (self.value[2] and "else " .. self.value[2]:src() or "")
 	end})
 end
 function node:new_while(cond, body)
@@ -107,6 +147,9 @@ function node:new_while(cond, body)
 		self.cond.dbg = self.dbg .. "\t"
 		self.value.dbg = self.dbg .. "\t"
 		return "(while\n" .. self.dbg .. "\tcond\n" .. tostring(self.cond) .. ",\n" .. self.dbg .. "\tbody\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)"
+	end,
+	src = function(self)
+		return "while(" .. self.cond:src() .. ")" .. self.value:src()
 	end})
 end
 function node:new_return(value)
@@ -116,6 +159,9 @@ function node:new_return(value)
 			self.value.dbg = self.dbg .. "\t"
 		end
 		return "(return" .. (self.value and "\n" .. self.dbg .. "\tvalue\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)" or ")")
+	end,
+	src = function(self)
+		return "return" .. (self.value and " " .. self.value:src() or "")
 	end})
 end
 function node:new_braces(statements)
@@ -127,6 +173,18 @@ function node:new_braces(statements)
 			s = s ..  tostring(v) .. ",\n"
 		end
 		return s .. self.dbg .. "\t])"
+	end,
+	src = function(self)
+		s = "{"
+		if #self.value > 0 then
+			for i, v in ipairs(self.value) do
+				if i > 1 then
+					s = s .. " "
+				end
+				s = s .. v:src()
+			end
+		end
+		return s .. "}"
 	end})
 end
 function node:new_comma(statements)
@@ -138,12 +196,26 @@ function node:new_comma(statements)
 			s = s ..  tostring(v) .. ",\n"
 		end
 		return s .. self.dbg .. "\t])"
+	end,
+	src = function(self)
+		if #self.value > 0 then
+			for i, v in ipairs(self.value) do
+				if i > 1 then
+					s = s .. ","
+				end
+				s = s .. v:src()
+			end
+		end
+		return s
 	end})
 end
 function node:new_decl(_type, id)
 	return node:new({_type = nodes.decl, _type = _type, value = id,
 	print = function(self)
 		return "(decl [" .. tostring(self._type) .. "] '" .. tostring(self.value) .. "')"
+	end,
+	src = function(self)
+		return tostring(self._type) .. " " .. self.value
 	end})
 end
 
@@ -158,6 +230,18 @@ function node:new_enum_decl(decls, name)
 			s = s ..  tostring(v) .. ",\n"
 		end
 		return s .. self.dbg .. "\t])"
+	end,
+	src = function(self)
+		s = (name or "").. "{"
+		if #self.value > 0 then
+			for i, v in ipairs(self.value) do
+				if i > 1 then
+					s = s .. ","
+				end
+				s = s .. v:src()
+			end
+		end
+		return s .. "}"
 	end})
 end
 
@@ -170,6 +254,18 @@ function node:new_params(params)
 			s = s ..  tostring(v) .. ",\n"
 		end
 		return s .. self.dbg .. "\t])"
+	end,
+	src = function(self)
+		s = "("
+		if #self.value > 0 then
+			for i, v in ipairs(self.value) do
+				if i > 1 then
+					s = s .. ","
+				end
+				s = s .. v:src()
+			end
+		end
+		return s .. ")"
 	end})
 end
 
@@ -179,6 +275,9 @@ function node:new_func(params, body, name)
 		self.value.dbg = self.dbg .. "\t"
 		self.params.dbg = self.dbg .. "\t"
 		return "(func '" .. tostring(self.name) .. "'\n" .. self.dbg .. "\tparams\n" .. tostring(self.params) .. "\n" .. self.dbg .. "\tbody\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)"
+	end,
+	src = function(self)
+		return self.name .. self.params:src() .. self.value:src() 
 	end})
 end
 
