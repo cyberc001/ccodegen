@@ -92,15 +92,21 @@ function next_char(src, i)
 	return i + 1, src:sub(i, i), string.byte(src:sub(i, i))
 end
 
-function next_token(src, i)
+function new_token_ctx(i, ws, token, token_value)
+	return {i = i, token = token, token_value = token_value, ws = ws}
+end
+
+function next_token(src, ctx)
+	local i = ctx.i
 	local c, c_code
+	local ws = ""
 	while i and i <= src:len() do
 		i, c, c_code = next_char(src, i)
 
 		if c == '\n' then
 			line = line + 1
-		elseif is_ws(c) then
-			-- пропуск пробелов
+		elseif is_ws(c) then -- пропуск пробелов
+			ws = ws .. c
 		elseif c == '#' then -- пропустить макросы
 			while i <= src:len() and c ~= '\n' do
 				i, c, c_code = next_char(src, i)
@@ -108,8 +114,8 @@ function next_token(src, i)
 		elseif is_valid_id_char(c_code, true) then -- идентификатор
 			local mods = {}
 			repeat
-				-- пропуск пробелов до следующего идентификатора
-				while is_ws(c) do
+				while is_ws(c) do -- пропуск пробелов до следующего идентификатора
+					ws = ws .. c
 					i, c, c_code = next_char(src, i)
 				end
 
@@ -130,7 +136,7 @@ function next_token(src, i)
 			
 			mods[#mods] = nil
 
-			return i - 1, tokens.id, id:new({name = id_name, mods = mods})
+			return new_token_ctx(i - 1, ws, tokens.id, id:new({name = id_name, mods = mods}))
 		elseif is_number(c_code) then -- распарсить число
 			local ch0 = string.byte('0')
 			local val = c_code - ch0
@@ -156,7 +162,7 @@ function next_token(src, i)
 				end
 			end
 
-			return i - 1, tokens.num, val
+			return new_token_ctx(i - 1, ws, tokens.num, val)
 		elseif c == '/' then
 			_, next_c, next_c_code = next_char(src, i)
 			if next_c == '/' then -- пропуск комментариев
@@ -164,7 +170,7 @@ function next_token(src, i)
 					i, c, c_code = next_char(src, i)
 				end
 			else -- оператор деления
-				return i, tokens.div
+				return new_token_ctx(i, ws, tokens.div)
 			end
 		elseif c == '"' or c == "'" then
 			beg_i = i - 1
@@ -179,91 +185,91 @@ function next_token(src, i)
 				end
 			end
 
-			return i, beg_c == '"' and tokens.str or tokens.char, src:sub(beg_i, i - 1)
+			return new_token_ctx(i, ws, beg_c == '"' and tokens.str or tokens.char, src:sub(beg_i, i - 1))
 		elseif c == '=' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return i, tokens.eq
+				return new_token_ctx(i, ws, tokens.eq)
 			else
-				return i, tokens.assign
+				return new_token_ctx(i, ws, tokens.assign)
 			end
 		elseif c == '+' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '+' then
 				i, _, _ = next_char(src, i)
-				return i, tokens.inc
+				return new_token_ctx(i, ws, tokens.inc)
 			else
-				return i, tokens.add
+				return new_token_ctx(i, ws, tokens.add)
 			end
 		elseif c == '-' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '-' then
 				i, _, _ = next_char(src, i)
-				return i, tokens.dec
+				return new_token_ctx(i, ws, tokens.dec)
 			else
-				return i, tokens.sub
+				return new_token_ctx(i, ws, tokens.sub)
 			end
 		elseif c == '!' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return i, tokens.ne
+				return new_token_ctx(i, ws, tokens.ne)
 			else
-				return i, tokens.lnot
+				return new_token_ctx(i, ws, tokens.lnot)
 			end
 		elseif c == '<' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return i, tokens.le
+				return new_token_ctx(i, ws, tokens.le)
 			elseif next_c == '<' then
 				i, _, _ = next_char(src, i)
-				return i, tokens.shl
+				return new_token_ctx(i, ws, tokens.shl)
 			else
-				return i, tokens.lt
+				return new_token_ctx(i, ws, tokens.lt)
 			end
 		elseif c == '>' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return i, tokens.ge
+				return new_token_ctx(i, ws, tokens.ge)
 			elseif next_c == '<' then
 				i, _, _ = next_char(src, i)
-				return i, tokens.shr
+				return new_token_ctx(i, ws, tokens.shr)
 			else
-				return i, tokens.gt
+				return new_token_ctx(i, ws, tokens.gt)
 			end
 		elseif c == '|' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '|' then
 				i, _, _ = next_char(src, i)
-				return i, tokens.lor
+				return new_token_ctx(i, ws, tokens.lor)
 			else
-				return i, tokens._or
+				return new_token_ctx(i, ws, tokens._or)
 			end
 		elseif c == '&' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '&' then
 				i, _, _ = next_char(src, i)
-				return i, tokens.land
+				return new_token_ctx(i, ws, tokens.land)
 			else
-				return i, tokens._and
+				return new_token_ctx(i, ws, tokens._and)
 			end
 		elseif c == '^' then
-			return i, tokens.xor
+			return new_token_ctx(i, ws, tokens.xor)
 		elseif c == '%' then
-			return i, tokens.mod
+			return new_token_ctx(i, ws, tokens.mod)
 		elseif c == '*' then
-			return i, tokens.mul
+			return new_token_ctx(i, ws, tokens.mul)
 		elseif c == '[' then
-			return i, tokens.brack
+			return new_token_ctx(i, ws, tokens.brack)
 		elseif c == '?' then
-			return i, tokens.cond
+			return new_token_ctx(i, ws, tokens.cond)
 		elseif c == '~' then
-			return i, tokens._not
+			return new_token_ctx(i, ws, tokens._not)
 		else
-			return i, c
+			return new_token_ctx(i, ws, c)
 		end
 	end
 end

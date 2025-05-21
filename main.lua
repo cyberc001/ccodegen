@@ -2,17 +2,17 @@ require "enbf"
 
 src = io.open("in"):read("*a")
 
-local i = 1
 local node, token, token_val
 
-i, token, token_val = next_token(src, i)
+ctx = new_token_ctx(1)
+ctx = next_token(src, ctx)
 
 while true do
-	node, i, token, token_val = global_decl(src, i, token, token_val)
+	node, ctx = global_decl(src, ctx)
 	print("----------------")
 	print(node:src())
 	--print(node, i, token, token_val, type(token_val) == "table" and token_val.name or '')
 	if i == nil then break end
-	i, token, token_val = next_token(src, i)
+	ctx = next_token(src, ctx)
 	if i == nil then break end
 end

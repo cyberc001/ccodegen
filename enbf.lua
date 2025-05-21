@@ -15,6 +15,7 @@ node = {}
 
 function node:new(o)
 	o = o or {}
+	o.ws = {""} -- пробельные символы; по умолчанию используется только [1] после выражения
 	setmetatable(o, self)
 	self.__index = self
 	return o
@@ -25,7 +26,7 @@ function node:__tostring()
 end
 -- возвращает исходный код узла
 function node:src()
-	return tostring(self.value)
+	return tostring(self.value) .. self.ws[1]
 end
 
 ---------------------[[ Выражения ]]---------------------
@@ -283,10 +284,10 @@ end
 
 
 
-function expression(level, src, i, token, token_value, dbg)
+function expression(level, src, ctx, dbg)
 	dbg = dbg or ""
 
-	if not token then
+	if not ctx.token then
 		print("line " .. line .. ": unexpected EOF of expression")
 		os.exit(1)
 	end
@@ -297,36 +298,34 @@ function expression(level, src, i, token, token_value, dbg)
 	-- для использования в бинарных операторах
 	local unit_node
 
-	print(dbg .. "expression", token, token_value)
-	if token == tokens.num then
-		local val = token_value
-		i, token, token_value = next_token(src, i)
+	print(dbg .. "expression", ctx.token, ctx.token_value)
+	if ctx.token == tokens.num then
+		local val = ctx.token_value
+		ctx = next_token(src, ctx)
 		unit_node = node:new({_type = nodes.num, value = val})
-	elseif token == tokens.char then
-		local val = token_value
-		i, token, token_value = next_token(src, i)
+	elseif ctx.token == tokens.char then
+		local val = ctx.token_value
+		ctx = next_token(src, ctx)
 		unit_node = node:new({_type = nodes.char, value = val})
-		print("TOKEN", unit_node)
-	elseif token == tokens.str then
-		local val = token_value
-		i, token, token_value = next_token(src, i)
+	elseif ctx.token == tokens.str then
+		local val = ctx.token_value
+		ctx = next_token(src, ctx)
 		unit_node = node:new({_type = nodes.str, value = val})
-	elseif token == tokens.id then
-		local id = token_value.name
-		i, token, token_value = next_token(src, i)
+	elseif ctx.token == tokens.id then
+		local id = ctx.token_value.name
+		ctx = next_token(src, ctx)
 
-		if token == '(' then -- вызов функции
+		if ctx.token == '(' then -- вызов функции
 			local args = {}
-			i, token, token_value = next_token(src, i)
-			while token ~= ')' do
-				rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+			ctx = next_token(src, ctx)
+			while ctx.token ~= ')' do
+				rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 				table.insert(args, rnode)
-				print(dbg .. "call token", token, i)
-				if token == ',' then -- пропуск запятой
-					i, token, token_value = next_token(src, i)
+				if ctx.token == ',' then -- пропуск запятой
+					ctx = next_token(src, ctx)
 				end
 			end
-			i, token, token_value = next_token(src, i) -- пропуск закрывающей скобки ')'
+			ctx = next_token(src, ctx) -- пропуск закрывающей скобки ')'
 
 			unit_node = node:new_call(id, args)
 		elseif identifiers[id].class == classes.enum_decl then
@@ -334,83 +333,83 @@ function expression(level, src, i, token, token_value, dbg)
 		else
 			unit_node = node:new_var(id)
 		end
-	elseif token == '(' then
-		i, token, token_value = next_token(src, i)
-		if token == tokens.id and (identifiers[token_value.name].class == classes._type or identifiers[token_value.name].class == classes.type_mod) then -- приведение типов
-			local cast_type = token_value
-			i, token, token_value = next_token(src, i)
-			while token == tokens.mul do -- пропуск указателей
-				i, token, token_value = next_token(src, i)
+	elseif ctx.token == '(' then
+		ctx = next_token(src, ctx)
+		if ctx.token == tokens.id and (identifiers[ctx.token_value.name].class == classes._type or identifiers[ctx.token_value.name].class == classes.type_mod) then -- приведение типов
+			local cast_type = ctx.token_value
+			ctx = next_token(src, ctx)
+			while ctx.token == tokens.mul do -- пропуск указателей
+				ctx = next_token(src, ctx)
 				cast_type.pointers = cast_type.pointers + 1
 			end
 
-			if token ~= ')' then
+			if ctx.token ~= ')' then
 				print("line " .. line .. ": expected ')' in type cast")
 				os.exit(1)
 			end
 
-			i, token, token_value = next_token(src, i) -- пропуск ')'
-			rnode, i, token, token_value = expression(tokens.inc, src, i, token, token_value, dbg .. "\t")
+			ctx = next_token(src, ctx) -- пропуск ')'
+			rnode, ctx = expression(tokens.inc, src, ctx, dbg .. "\t")
 			unit_node = node:new_cast(cast_type, rnode)
 		else -- скобки ()
-			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
-			if token ~= ')' then
+			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+			if ctx.token ~= ')' then
 				print("line " .. line .. ": expected ')' in parantheses")
 				os.exit(1)
 			end
-			i, token, token_value = next_token(src, i) -- пропуск ')'
+			ctx = next_token(src, ctx) -- пропуск ')'
 			unit_node = node:new({_type = nodes.parantheses, value = rnode})
 		end
-	elseif token == tokens.mul or token == tokens._and or token == tokens.lnot or token == tokens._lnot or token == tokens.add or token == tokens.inc or token == tokens.dec then -- унарные операторы
-		local op = token
-		i, token, token_value = next_token(src, i)
-		rnode, i, token, token_value = expression(tokens.inc, src, i, token, token_value, dbg .. "\t")
+	elseif ctx.token == tokens.mul or ctx.token == tokens._and or ctx.token == tokens.lnot or ctx.token == tokens._lnot or ctx.token == tokens.add or ctx.token == tokens.inc or ctx.token == tokens.dec then -- унарные операторы
+		local op = ctx.token
+		ctx = next_token(src, ctx)
+		rnode, ctx = expression(tokens.inc, src, ctx, dbg .. "\t")
 		unit_node = node:new_un_op(op, rnode)
-	elseif token == tokens.sub then -- отдельный случай с отрицательными числами
-		i, token, token_value = next_token(src, i)
-		if token == tokens.num then
-			local val = token_value
-			i, token, token_value = next_token(src, i)
+	elseif ctx.token == tokens.sub then -- отдельный случай с отрицательными числами
+		ctx = next_token(src, ctx)
+		if ctx.token == tokens.num then
+			local val = ctx.token_value
+			ctx = next_token(src, ctx)
 			unit_node = node:new({_type = nodes.num, value = -val})
 		else
-			rnode, i, token, token_value = expression(tokens.inc, src, i, token, token_value, dbg .. "\t")
+			rnode, ctx = expression(tokens.inc, src, ctx, dbg .. "\t")
 			unit_node = node:new_un_op(tokens.sub, rnode)
 		end
 	end
 
 	-- бинарные и постфиксные операторы
-	while type(token) == "number" and token >= level do
-		print(dbg .. "token", token)
-		if token == tokens.assign then
-			i, token, token_value = next_token(src, i) -- пропуск '='
-			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+	while type(ctx.token) == "number" and ctx.token >= level do
+		print(dbg .. "token", ctx.token)
+		if ctx.token == tokens.assign then
+			ctx = next_token(src, ctx) -- пропуск '='
+			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 			unit_node = node:new_bin_op(tokens.assign, unit_node, rnode)
-		elseif token == tokens.cond then
-			i, token, token_value = next_token(src, i) -- пропуск '?'
-			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
-			if token ~= ':' then
+		elseif ctx.token == tokens.cond then
+			ctx = next_token(src, ctx) -- пропуск '?'
+			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+			if ctx.token ~= ':' then
 				print("line " .. line .. ": expected ':' in conditional operator")
 				os.exit(1)
 			end
-			i, token, token_value = next_token(src, i) -- пропуск ':'
-			rnode2, i, token, token_value = expression(tokens.cond, src, i, token, token_value, dbg .. "\t")
+			ctx = next_token(src, ctx) -- пропуск ':'
+			rnode2, ctx = expression(tokens.cond, src, ctx, dbg .. "\t")
 			unit_node = node:new_cond(unit_node, rnode, rnode2)
-		elseif token >= tokens.lor and token <= tokens.mod then
-			local op = token
-			i, token, token_value = next_token(src, i)
-			rnode, i, token, token_value = expression(op + 1, src, i, token, token_value, dbg .. "\t")
+		elseif ctx.token >= tokens.lor and ctx.token <= tokens.mod then
+			local op = ctx.token
+			ctx = next_token(src, ctx)
+			rnode, ctx = expression(op + 1, src, ctx, dbg .. "\t")
 			unit_node = node:new_bin_op(op, unit_node, rnode)
-		elseif token == tokens.inc or token == tokens.dec then
-			unit_node = node:new_un_op(token, unit_node, true)
-			i, token, token_value = next_token(src, i)
-		elseif token == tokens.brack then
-			i, token, token_value = next_token(src, i)
-			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
-			if token ~= ']' then
+		elseif ctx.token == tokens.inc or ctx.token == tokens.dec then
+			unit_node = node:new_un_op(ctx.token, unit_node, true)
+			ctx = next_token(src, ctx)
+		elseif ctx.token == tokens.brack then
+			ctx = next_token(src, ctx)
+			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+			if ctx.token ~= ']' then
 				print("line " .. line .. ": expected ']' to close indexing operator")
 				os.exit(1)
 			end
-			i, token, token_value = next_token(src, i)
+			ctx = next_token(src, ctx)
 			unit_node = node:new_index(unit_node, rnode)
 		else
 			print("line " .. line .. ": unexpected end of expression")
@@ -419,14 +418,14 @@ function expression(level, src, i, token, token_value, dbg)
 		print(dbg .. "going next")
 	end
 
-	print(dbg .. "expression returning", token, token_value)
-	return unit_node, i, token, token_value
+	print(dbg .. "expression returning", ctx.token, ctx.token_value)
+	return unit_node, ctx
 end
 
-function statement(src, i, token, token_value, dbg)
+function statement(src, ctx, dbg)
 	dbg = dbg or ""
 
-	if not token then
+	if not ctx.token then
 		print("line " .. line .. ": unexpected EOF of statement")
 		os.exit(1)
 	end
@@ -434,109 +433,109 @@ function statement(src, i, token, token_value, dbg)
 	-- временные локальные переменные
 	local rnode, rnode2
 
-	print(dbg .. "statement", token, token_value)
-	if token == tokens.id and (identifiers[token_value.name].class == classes._type or identifiers[token_value.name].class == classes.type_mod) then -- объявление переменной
-		local type_id = token_value
-		i, token, token_value = next_token(src, i)
+	print(dbg .. "statement", ctx.token, ctx.token_value)
+	if ctx.token == tokens.id and (identifiers[ctx.token_value.name].class == classes._type or identifiers[ctx.token_value.name].class == classes.type_mod) then -- объявление переменной
+		local type_id = ctx.token_value
+		ctx = next_token(src, ctx)
 
-		while token == tokens.mul do -- пропуск указателей
-			i, token, token_value = next_token(src, i)
+		while ctx.token == tokens.mul do -- пропуск указателей
+			ctx = next_token(src, ctx)
 			type_id.pointers = type_id.pointers + 1
 		end
 
-		if token ~= tokens.id then
+		if ctx.token ~= tokens.id then
 			print("line " .. line .. ": expected variable name in declaration")
 			os.exit(1)
 		end
-		local var_name = token_value.name
-		i, token, token_value = next_token(src, i)
+		local var_name = ctx.token_value.name
+		ctx = next_token(src, ctx)
 
-		if token == tokens.assign then
-			i, token, token_value = next_token(src, i)
-			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
-			return node:new_bin_op(tokens.assign, node:new_decl(type_id, var_name), rnode), i, token, token_value
+		if ctx.token == tokens.assign then
+			ctx = next_token(src, ctx)
+			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+			return node:new_bin_op(tokens.assign, node:new_decl(type_id, var_name), rnode), ctx
 		else
-			return node:new_decl(type_id, var_name), i, token, token_value
+			return node:new_decl(type_id, var_name), ctx
 		end
-	elseif token == tokens.id and token_value.name == "if" then
-		i, token, token_value = next_token(src, i)
-		if token ~= '(' then
+	elseif ctx.token == tokens.id and ctx.token_value.name == "if" then
+		print(dbg .. "if")
+		ctx = next_token(src, ctx)
+		if ctx.token ~= '(' then
 			print("line " .. line .. ": expected '(' after 'if'")
 			os.exit(1)
 		end
-		i, token, token_value = next_token(src, i)
-		rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+		ctx = next_token(src, ctx)
+		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 		local cond = rnode
-		if token ~= ')' then
+		if ctx.token ~= ')' then
 			print("line " .. line .. ": expected ')' after if condition")
 			os.exit(1)
 		end
-		i, token, token_value = next_token(src, i) -- пропуск ')'
+		ctx = next_token(src, ctx) -- пропуск ')'
 
-		rnode, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
-		if token == tokens.id and token_value.name == "else" then
-			i, token, token_value = next_token(src, i) -- пропуск ')'
-			rnode2, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
+		rnode, ctx = statement(src, ctx, dbg .. "\t")
+		if ctx.token == tokens.id and ctx.token_value.name == "else" then
+			ctx = next_token(src, ctx) -- пропуск ')'
+			rnode2, ctx = statement(src, ctx, dbg .. "\t")
 		end
-		return node:new_if(cond, rnode, rnode2), i, token, token_value
-	elseif token == tokens.id and token_value.name == "while" then
-		i, token, token_value = next_token(src, i)
-		if token ~= '(' then
+		return node:new_if(cond, rnode, rnode2), ctx
+	elseif ctx.token == tokens.id and ctx.token_value.name == "while" then
+		ctx = next_token(src, ctx)
+		if ctx.token ~= '(' then
 			print("line " .. line .. ": expected '(' after 'while'")
 			os.exit(1)
 		end
-		i, token, token_value = next_token(src, i)
-		rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
-		if token ~= ')' then
+		ctx = next_token(src, ctx)
+		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+		if ctx.token ~= ')' then
 			print("line " .. line .. ": expected ')' after while condition")
 			os.exit(1)
 		end
-		i, token, token_value = next_token(src, i) -- пропуск ')'
-		rnode2, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
-		return node:new_while(rnode, rnode2), i, token, token_value
-	elseif token == '{' then
-		i, token, token_value = next_token(src, i) -- пропуск '{'
+		ctx = next_token(src, ctx) -- пропуск ')'
+		rnode2, ctx = statement(src, ctx, dbg .. "\t")
+		return node:new_while(rnode, rnode2), ctx
+	elseif ctx.token == '{' then
+		ctx = next_token(src, ctx) -- пропуск '{'
 		local statements = {}
-		while token ~= '}' do
-			rnode, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
-			if token == nil then
+		while ctx.token ~= '}' do
+			rnode, ctx = statement(src, ctx, dbg .. "\t")
+			if ctx.token == nil then
 				print("line " .. line .. ": curly brace '{' was never closed")
 				os.exit(1)
 			end
 			table.insert(statements, rnode)
 		end
-		i, token, token_value = next_token(src, i) -- пропуск '}'
-		print(dbg .. "braces returning", token, token_value)
-		return node:new_braces(statements), i, token, token_value
-	elseif token == tokens.id and token_value.name == "return" then
-		i, token, token_value = next_token(src, i)
-		if token ~= ';' then
-			rnode, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
+		ctx = next_token(src, ctx) -- пропуск '}'
+		return node:new_braces(statements), ctx
+	elseif ctx.token == tokens.id and ctx.token_value.name == "return" then
+		ctx = next_token(src, ctx)
+		if ctx.token ~= ';' then
+			rnode, ctx = statement(src, ctx, dbg .. "\t")
 		end
-		if token ~= ';' then
+		if ctx.token ~= ';' then
 			print("line " .. line .. ": expected ';' after 'return'")
 			os.exit(1)
 		end
-		i, token, token_value = next_token(src, i) -- пропуск ';'
-		return node:new_return(rnode), i, token, token_value
-	elseif token == ';' then -- пустое утверждение
-		i, token, token_value = next_token(src, i)
-		return nil, i, token, token_value
+		ctx = next_token(src, ctx) -- пропуск ';'
+		return node:new_return(rnode), ctx
+	elseif ctx.token == ';' then -- пустое утверждение
+		ctx = next_token(src, ctx)
+		return nil, ctx
 	else -- присваивание или вызов функции
-		rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
-		if token ~= ';' then
+		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+		if ctx.token ~= ';' then
 			print("line " .. line .. ": expected ';' after statement")
 			os.exit(1)
 		end
-		i, token, token_value = next_token(src, i)
-		return rnode, i, token, token_value
+		ctx = next_token(src, ctx)
+		return rnode, ctx
 	end
 end
 
-function enum_decl(src, i, token, token_value, dbg)
+function enum_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
-	if not token then
+	if not ctx.token then
 		print("line " .. line .. ": unexpected EOF of enum declaration")
 		os.exit(1)
 	end
@@ -545,9 +544,9 @@ function enum_decl(src, i, token, token_value, dbg)
 	local rnode
 
 	local decls = {}
-	print(dbg .. "enum, decl", token, token_value)
-	while token ~= '}' do
-		if token ~= tokens.id then
+	print(dbg .. "enum, decl", ctx.token, ctx.token_value)
+	while ctx.token ~= '}' do
+		if ctx.token ~= tokens.id then
 			print("line " .. line .. ": expected an identifier for enum declaration")
 			os.exit(1)
 		end
@@ -556,35 +555,35 @@ function enum_decl(src, i, token, token_value, dbg)
 			print("line " .. line .. ": attempting to re-define enum '" .. id .. "'")
 			os.exit(1)
 		end
-		i, token, token_value = next_token(src, i)
+		ctx = next_token(src, ctx)
 
-		if token == tokens.assign then
-			i, token, token_value = next_token(src, i) -- пропуск '='
-			if token ~= tokens.num then
+		if ctx.token == tokens.assign then
+			ctx = next_token(src, ctx) -- пропуск '='
+			if ctx.token ~= tokens.num then
 				print("line " .. line .. ": enum should be initialized with a number")
 				os.exit(1)
 			end
-			table.insert(decls, node:new_bin_op(tokens.assign, node:new_var(id), node:new({_type = nodes.num, value = token_value})))
-			i, token, token_value = next_token(src, i)
+			table.insert(decls, node:new_bin_op(tokens.assign, node:new_var(id), node:new({_type = nodes.num, value = ctx.token_value})))
+			ctx = next_token(src, ctx)
 		else
 			table.insert(decls, node:new_var(id))
 		end
 
 		identifiers[id].class = classes.enum_decl
-		if token ~= ',' then
+		if ctx.token ~= ',' then
 			print("line " .. line .. ": expected ',' after enum declaration")
 			os.exit(1)
 		end
-		i, token, token_value = next_token(src, i)
+		ctx = next_token(src, ctx)
 	end
 
-	return node:new_enum_decl(decls), i, token, token_value
+	return node:new_enum_decl(decls), ctx
 end
 
-function func_params(src, i, token, token_value, dbg)
+function func_params(src, ctx, dbg)
 	dbg = dbg or ""
 
-	if not token then
+	if not ctx.token then
 		print("line " .. line .. ": unexpected EOF of function parameters")
 		os.exit(1)
 	end
@@ -593,44 +592,44 @@ function func_params(src, i, token, token_value, dbg)
 	local rnode
 
 	local params = {}
-	print(dbg .. "func params", token, token_value)
-	while token ~= ')' do
-		if token ~= tokens.id then
+	print(dbg .. "func params", ctx.token, ctx.token_value)
+	while ctx.token ~= ')' do
+		if ctx.token ~= tokens.id then
 			print("line " .. line .. ": expected a type identifier")
 			os.exit(1)
 		end
-		if identifiers[token_value.name].class ~= classes._type and identifiers[token_value.name].class ~= classes.type_mod then
+		if identifiers[ctx.token_value.name].class ~= classes._type and identifiers[ctx.token_value.name].class ~= classes.type_mod then
 			print("line " .. line .. ": identifier is not a type")
 			os.exit(1)
 		end
 		local type_id = token_value
 
-		i, token, token_value = next_token(src, i)
-		while token == tokens.mul do -- пропуск указателей
-			i, token, token_value = next_token(src, i)
+		ctx = next_token(src, ctx)
+		while ctx.token == tokens.mul do -- пропуск указателей
+			ctx = next_token(src, ctx)
 			type_id.pointers = type_id.pointers + 1
 		end
 
-		if token ~= tokens.id then
+		if ctx.token ~= tokens.id then
 			print("line " .. line .. ": expected parameter name")
 			os.exit(1)
 		end
 
 		table.insert(params, node:new_decl(type_id, token_value.name))
 
-		i, token, token_value = next_token(src, i)
-		if token == ',' then
-			i, token, token_value = next_token(src, i)
+		ctx = next_token(src, ctx)
+		if ctx.token == ',' then
+			ctx = next_token(src, ctx)
 		end
 	end
 
-	return node:new_params(params), i, token, token_value
+	return node:new_params(params), ctx
 end
 
-function func_decl(src, i, token, token_value, dbg)
+function func_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
-	if not token then
+	if not ctx.token then
 		print("line " .. line .. ": unexpected EOF of function declaration")
 		os.exit(1)
 	end
@@ -638,32 +637,36 @@ function func_decl(src, i, token, token_value, dbg)
 	local params, body
 
 	print(dbg .. "func decl", token, token_value)
-	if token ~= '(' then
+	if ctx.token ~= '(' then
 		print("line " .. line .. ": expected '(' in function declaration")
 		os.exit(1)
 	end
-	i, token, token_value = next_token(src, i)
-	params, i, token, token_value = func_params(src, i, token, token_value, dbg .. "\t")
-	if token ~= ')' then
+	ctx = next_token(src, ctx)
+	params, ctx = func_params(src, ctx, dbg .. "\t")
+	if ctx.token ~= ')' then
 		print("line " .. line .. ": expected ')' in function declaration")
 		os.exit(1)
 	end
-	i, token, token_value = next_token(src, i)
+	ctx = next_token(src, ctx)
 
-	if token ~= '{' then
+	if ctx.token ~= '{' then
 		print("line " .. line .. ": expected '{' in function declaration")
 		os.exit(1)
 	end
-	body, i, token, token_value = statement(src, i, token, token_value, dbg .. "\t")
+	body, ctx = statement(src, ctx, dbg .. "\t")
 	print(dbg .. "tokens after body", token, token_value)
 
-	return node:new_func(params, body), i and i - 1 or nil, token, token_value -- грязный хак (фигурные скобки{} возвращают токен следующий за ними, но нам нужно вернуть })
+	-- грязный хак (фигурные скобки{} возвращают токен следующий за ними, но нам нужно вернуть })
+	if ctx.i then 
+		ctx.i = ctx.i - 1
+	end
+	return node:new_func(params, body), ctx
 end
 
-function global_decl(src, i, token, token_value, dbg)
+function global_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
-	if not token then
+	if not ctx.token then
 		print("line " .. line .. ": unexpected EOF of global declaration")
 		os.exit(1)
 	end
@@ -671,72 +674,72 @@ function global_decl(src, i, token, token_value, dbg)
 	-- временные локальные переменные
 	local rnode
 
-	print(dbg .. "global decl", token, token_value)
-	if token == tokens.id and token_value.name == "enum" then
-		i, token, token_value = next_token(src, i)
+	print(dbg .. "global decl", ctx.token, ctx.token_value)
+	if ctx.token == tokens.id and ctx.token_value.name == "enum" then
+		ctx = next_token(src, ctx)
 		local enum_id
-		if token ~= '{' then
-			i, token, token_value = next_token(src, i)
-			if token ~= tokens.id then
+		if ctx.token ~= '{' then
+			ctx = next_token(src, ctx)
+			if ctx.token ~= tokens.id then
 				print("line " .. line .. ": expected enum identifier in global declaration")
 				os.exit(1)
 			end
-			enum_id = token_value.name
+			enum_id = ctx.token_value.name
 		end
 
-		if token == '{' then -- тела может и не быть
-			i, token, token_value = next_token(src, i)
-			rnode, i, token, token_value = enum_decl(src, i, token, token_value, dbg .. "\t")
-			i, token, token_value = next_token(src, i) -- пропуск '}'
+		if ctx.token == '{' then -- тела может и не быть
+			ctx = next_token(src, ctx)
+			rnode, ctx = enum_decl(src, ctx, dbg .. "\t")
+			ctx = next_token(src, ctx) -- пропуск '}'
 			rnode.name = enum_id
-			return rnode, i, token, token_value
+			return rnode, ctx
 		end
-		return node:new_enum_decl({}, enum_id), i, token, token_value
+		return node:new_enum_decl({}, enum_id), ctx
 	end
 	
 	local type_id = token_value
-	i, token, token_value = next_token(src, i)
+	ctx = next_token(src, ctx)
 
-	while token == tokens.mul do -- пропуск указателей
-		i, token, token_value = next_token(src, i)
+	while ctx.token == tokens.mul do -- пропуск указателей
+		ctx = next_token(src, ctx)
 		type_id.pointers = type_id.pointers + 1
 	end
 
 	local unit_nodes = {}
 
-	if token ~= tokens.id then
+	if ctx.token ~= tokens.id then
 		print("line " .. line .. ": expected variable or function name in global declaration")
 		os.exit(1)
 	end
-	local decl_name = token_value.name
-	i, token, token_value = next_token(src, i)
+	local decl_name = ctx.token_value.name
+	ctx = next_token(src, ctx)
 
-	if token == tokens.assign then -- объявление переменной с инициализацией
-		i, token, token_value = next_token(src, i)
-		rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+	if ctx.token == tokens.assign then -- объявление переменной с инициализацией
+		ctx = next_token(src, ctx)
+		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 		unit_nodes[1] = node:new_bin_op(tokens.assign, node:new_decl(type_id, decl_name), rnode)
-	elseif token == '(' then -- объявление функции
-		rnode, i, token, token_value = func_decl(src, i, token, token_value, dbg .. "\t")
+	elseif ctx.token == '(' then -- объявление функции
+		rnode, ctx = func_decl(src, ctx, dbg .. "\t")
 		print(dbg .. "tokens after func decl", token, token_value)
 		rnode.name = decl_name
-		return rnode, i, token, token_value
+		return rnode, ctx
 	else -- объявление переменной
 		unit_nodes[1] = node:new_decl(type_id, decl_name)
 	end
 
-	while token ~= ';' and token ~= '}' do
-		if token ~= tokens.id then
+	while ctx.token ~= ';' and ctx.token ~= '}' do
+		if ctx.token ~= tokens.id then
 			print("line " .. line .. ": expected variable or function name in global declaration")
 			os.exit(1)
 		end
-		local decl_name = token_value.name
-		i, token, token_value = next_token(src, i)
+		local decl_name = ctx.token_value.name
+		ctx = next_token(src, ctx)
 
-		if token == tokens.assign then -- объявление переменной с инициализацией
-			i, token, token_value = next_token(src, i)
-			rnode, i, token, token_value = expression(tokens.assign, src, i, token, token_value, dbg .. "\t")
+		if ctx.token == tokens.assign then -- объявление переменной с инициализацией
+			ctx = next_token(src, ctx)
+			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 			table.insert(unit_nodes, node:new_bin_op(tokens.assign, node:new_var(decl_name), rnode))
-		elseif token == '(' then -- объявление функции
+		elseif ctx.token == '(' then -- объявление функции
 			print("line " .. line .. ": unexpected function in global declaration")
 			os.exit(1)
 		else -- объявление переменной
@@ -744,5 +747,5 @@ function global_decl(src, i, token, token_value, dbg)
 		end
 	end
 
-	return node:new_comma(unit_nodes), i, token, token_value
+	return node:new_comma(unit_nodes), ctx
 end
