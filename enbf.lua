@@ -1,6 +1,8 @@
 require "token"
 require "os"
 
+local enbf_debug = false
+
 nodes = {
 	num = 1, str = 2, char = 3,
 	call = 10, var = 12, params = 13, decl = 14, func = 15, enum_decl = 16,
@@ -299,7 +301,7 @@ function expression(level, src, ctx, dbg)
 	-- для использования в бинарных операторах
 	local unit_node
 
-	print(dbg .. "expression", ctx.token, ctx.token_value)
+	if enbf_debug then print(dbg .. "expression", ctx.token, ctx.token_value) end
 	if ctx.token == tokens.num then
 		local val = ctx.token_value
 		ctx = next_token(src, ctx)
@@ -397,7 +399,7 @@ function expression(level, src, ctx, dbg)
 
 	-- бинарные и постфиксные операторы
 	while type(ctx.token) == "number" and ctx.token >= level do
-		print(dbg .. "token", ctx.token)
+		if enbf_debug then print(dbg .. "token", ctx.token) end
 		if ctx.token == tokens.assign then
 			unit_node.ws_after = unit_node.ws_after .. ctx.ws
 			ctx = next_token(src, ctx) -- пропуск '='
@@ -447,10 +449,10 @@ function expression(level, src, ctx, dbg)
 			print("line " .. line .. ": unexpected end of expression")
 			os.exit(1)
 		end
-		print(dbg .. "going next")
+		if enbf_debug then print(dbg .. "going next") end
 	end
 
-	print(dbg .. "expression returning", ctx.token, ctx.token_value)
+	if enbf_debug then print(dbg .. "expression returning", ctx.token, ctx.token_value) end
 	return unit_node, ctx
 end
 
@@ -465,7 +467,7 @@ function statement(src, ctx, dbg)
 	-- временные локальные переменные
 	local rnode, rnode2
 
-	print(dbg .. "statement", ctx.token, ctx.token_value)
+	if enbf_debug then print(dbg .. "statement", ctx.token, ctx.token_value) end
 	if ctx.token == tokens.id and (identifiers[ctx.token_value.name].class == classes._type or identifiers[ctx.token_value.name].class == classes.type_mod) then -- объявление переменной
 		local type_id = ctx.token_value
 		ctx = next_token(src, ctx)
@@ -620,7 +622,7 @@ function enum_decl(src, ctx, dbg)
 	local rnode
 
 	local decls = {}
-	print(dbg .. "enum, decl", ctx.token, ctx.token_value)
+	if enbf_debug then print(dbg .. "enum, decl", ctx.token, ctx.token_value) end
 	while ctx.token ~= '}' do
 		if ctx.token ~= tokens.id then
 			print("line " .. line .. ": expected an identifier for enum declaration")
@@ -678,7 +680,7 @@ function func_params(src, ctx, dbg)
 	local rnode
 
 	local params = {}
-	print(dbg .. "func params", ctx.token, ctx.token_value)
+	if enbf_debug then print(dbg .. "func params", ctx.token, ctx.token_value) end
 	while ctx.token ~= ')' do
 		if ctx.token ~= tokens.id then
 			print("line " .. line .. ": expected a type identifier")
@@ -722,7 +724,7 @@ function func_decl(src, ctx, dbg)
 
 	local params, body
 
-	print(dbg .. "func decl", token, token_value)
+	if enbf_debug then print(dbg .. "func decl", token, token_value) end
 	if ctx.token ~= '(' then
 		print("line " .. line .. ": expected '(' in function declaration")
 		os.exit(1)
@@ -744,7 +746,7 @@ function func_decl(src, ctx, dbg)
 	end
 	body, ctx = statement(src, ctx, dbg .. "\t")
 	body.ws_before = ws_before_body
-	print(dbg .. "tokens after body", ctx.token, ctx.token_value)
+	if enbf_debug then print(dbg .. "tokens after body", ctx.token, ctx.token_value) end
 
 	-- грязный хак (фигурные скобки{} возвращают токен следующий за ними, но нам нужно вернуть })
 	ctx.i = ctx.prev.i
@@ -764,7 +766,7 @@ function global_decl(src, ctx, dbg)
 	-- временные локальные переменные
 	local rnode
 
-	print(dbg .. "global decl", ctx.token, ctx.token_value)
+	if enbf_debug then print(dbg .. "global decl", ctx.token, ctx.token_value) end
 	if ctx.token == tokens.id and ctx.token_value.name == "enum" then
 		ctx = next_token(src, ctx)
 		local ws_after_enum = ctx.ws
@@ -826,7 +828,6 @@ function global_decl(src, ctx, dbg)
 	elseif ctx.token == '(' then -- объявление функции
 		rnode, ctx = func_decl(src, ctx, dbg .. "\t")
 		rnode.ws_after_return_type = ws_after_type
-		print(dbg .. "tokens after func decl", ctx.token, ctx.token_value)
 		rnode.name = decl_name
 		rnode.return_type = type_id
 		return rnode, ctx
