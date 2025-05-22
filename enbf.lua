@@ -36,7 +36,7 @@ end
 ---------------------[[ Выражения ]]---------------------
 function node:new_call(name, args)
 	return node:new({_type = nodes.call, value = args, name = name,
-	arg_ws_after = "", ws_after_name = "", ws_before_params = "",
+	ws_after_name = "", ws_before_params = "",
 	print = function(self)
 		local s = "(fun call '" .. name .. "'\n" .. self.dbg .. "\targs [\n"
 		for _, v in ipairs(self.value) do
@@ -52,7 +52,7 @@ function node:new_call(name, args)
 				if i > 1 then
 					s = s .. ","
 				end
-				s = s .. v:src() .. self.arg_ws_after[i]
+				s = s .. v:src()
 			end
 		end
 		return s .. ")"
@@ -126,6 +126,7 @@ end
 ---------------------[[ Утверждения ]]---------------------
 function node:new_if(cond, body, else_body)
 	return node:new({_type = nodes._if, value = else_body and {body, else_body} or {body}, cond = cond,
+	ws_after_if = "",
 	print = function(self)
 		self.cond.dbg = self.dbg .. "\t"
 		self.value[1].dbg = self.dbg .. "\t"
@@ -135,18 +136,18 @@ function node:new_if(cond, body, else_body)
 		return "(if\n" .. self.dbg .. "\tcond\n" .. tostring(self.cond) .. "\n" .. self.dbg .. "\tbody\n" .. tostring(self.value[1]) .. ",\n" .. self.dbg .. (self.value[2] and "\telse\n" .. tostring(self.value[2]) .. "\n" .. self.dbg .. "\t)" or "\n" .. self.dbg .. ")")
 	end,
 	_src = function(self)
-		return "if(" .. self.cond:src() .. ")" .. self.value[1]:src() .. (self.value[2] and "else " .. self.value[2]:src() or "")
+		return "if" .. self.ws_after_if .. "(" .. self.cond:src() .. ")" .. self.value[1]:src() .. (self.value[2] and "else" .. self.value[2]:src() or "")
 	end})
 end
 function node:new_while(cond, body)
-	return node:new({_type = nodes._while, value = body, cond = cond,
+	return node:new({_type = nodes._while, value = body, cond = cond, ws_after_while = "", ws_after_cond = "",
 	print = function(self)
 		self.cond.dbg = self.dbg .. "\t"
 		self.value.dbg = self.dbg .. "\t"
 		return "(while\n" .. self.dbg .. "\tcond\n" .. tostring(self.cond) .. ",\n" .. self.dbg .. "\tbody\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)"
 	end,
 	_src = function(self)
-		return "while(" .. self.cond:src() .. ")" .. self.value:src()
+		return "while" .. self.ws_after_while .. "(" .. self.cond:src() .. ")" .. self.ws_after_cond .. self.value:src()
 	end})
 end
 function node:new_return(value)
@@ -317,20 +318,22 @@ function expression(level, src, ctx, dbg)
 
 		if ctx.token == '(' then -- вызов функции
 			local args = {}
-			local arg_ws_after = {}
 			local ws_after_name = ctx.ws
 			ctx = next_token(src, ctx) -- пропуск '('
 			local ws_before_params
 			while ctx.token ~= ')' do
+				local arg_ws_before = ctx.ws
 				if not ws_before_params then
 					ws_before_params = ctx.ws
+					arg_ws_before = ""
 				end
 				rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+				rnode.ws_before = rnode.ws_before .. arg_ws_before
+				rnode.ws_after = rnode.ws_after .. ctx.ws
 				table.insert(args, rnode)
-				table.insert(arg_ws_after, ctx.ws)
+
 				if ctx.token == ',' then -- пропуск запятой
 					ctx = next_token(src, ctx)
-				else
 				end
 			end
 			if not ws_before_params then
@@ -345,7 +348,6 @@ function expression(level, src, ctx, dbg)
 			unit_node.arg_ws_after = arg_ws_after
 		else
 			unit_node = node:new_var(id)
-			unit_node.ws_after = ctx.ws
 		end
 	elseif ctx.token == '(' then
 		ctx = next_token(src, ctx)
@@ -397,13 +399,17 @@ function expression(level, src, ctx, dbg)
 	while type(ctx.token) == "number" and ctx.token >= level do
 		print(dbg .. "token", ctx.token)
 		if ctx.token == tokens.assign then
+			unit_node.ws_after = unit_node.ws_after .. ctx.ws
 			ctx = next_token(src, ctx) -- пропуск '='
+
 			local ws_before_op2 = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 			rnode.ws_before = rnode.ws_before .. ws_before_op2
 			unit_node = node:new_bin_op(tokens.assign, unit_node, rnode)
 		elseif ctx.token == tokens.cond then
+			unit_node.ws_after = unit_node.ws_after .. ctx.ws
 			ctx = next_token(src, ctx) -- пропуск '?'
+
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 			if ctx.token ~= ':' then
 				print("line " .. line .. ": expected ':' in conditional operator")
@@ -413,21 +419,29 @@ function expression(level, src, ctx, dbg)
 			rnode2, ctx = expression(tokens.cond, src, ctx, dbg .. "\t")
 			unit_node = node:new_cond(unit_node, rnode, rnode2)
 		elseif ctx.token >= tokens.lor and ctx.token <= tokens.mod then
+			unit_node.ws_after = unit_node.ws_after .. ctx.ws
 			local op = ctx.token
 			ctx = next_token(src, ctx)
+			local ws_before_op2 = ctx.ws
+
 			rnode, ctx = expression(op + 1, src, ctx, dbg .. "\t")
+			rnode.ws_before = rnode.ws_before .. ws_before_op2
 			unit_node = node:new_bin_op(op, unit_node, rnode)
 		elseif ctx.token == tokens.inc or ctx.token == tokens.dec then
 			unit_node = node:new_un_op(ctx.token, unit_node, true)
 			ctx = next_token(src, ctx)
 		elseif ctx.token == tokens.brack then
 			ctx = next_token(src, ctx)
+			local ws_before_idx = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 			if ctx.token ~= ']' then
 				print("line " .. line .. ": expected ']' to close indexing operator")
 				os.exit(1)
 			end
+			rnode.ws_after = rnode.ws_after .. ctx.ws
+
 			ctx = next_token(src, ctx)
+			rnode.ws_before = rnode.ws_before .. ws_before_idx
 			unit_node = node:new_index(unit_node, rnode)
 		else
 			print("line " .. line .. ": unexpected end of expression")
@@ -481,11 +495,13 @@ function statement(src, ctx, dbg)
 			decl.ws_after = ws_after_decl
 			return node:new_bin_op(tokens.assign, decl, rnode), ctx
 		else
-			return node:new_decl(type_id, var_name), ctx
+			local decl = node:new_decl(type_id, var_name)
+			decl.ws_mid = ws_after_type
+			return decl, ctx
 		end
 	elseif ctx.token == tokens.id and ctx.token_value.name == "if" then
-		print(dbg .. "if")
 		ctx = next_token(src, ctx)
+		local ws_after_if = ctx.ws
 		if ctx.token ~= '(' then
 			print("line " .. line .. ": expected '(' after 'if'")
 			os.exit(1)
@@ -499,40 +515,55 @@ function statement(src, ctx, dbg)
 		end
 		ctx = next_token(src, ctx) -- пропуск ')'
 
+		local ws_before_body = rnode.ws_after .. ctx.ws
 		rnode, ctx = statement(src, ctx, dbg .. "\t")
+		rnode.ws_before = rnode.ws_before .. ws_before_body
 		if ctx.token == tokens.id and ctx.token_value.name == "else" then
+			rnode.ws_after = rnode.ws_after .. ctx.ws
 			ctx = next_token(src, ctx) -- пропуск ')'
+			local ws_before_else = ctx.ws
 			rnode2, ctx = statement(src, ctx, dbg .. "\t")
+			rnode2.ws_before = rnode2.ws_before .. ws_before_else
 		end
-		return node:new_if(cond, rnode, rnode2), ctx
+
+		local res = node:new_if(cond, rnode, rnode2)
+		res.ws_after_if = ws_after_if
+		return res, ctx
 	elseif ctx.token == tokens.id and ctx.token_value.name == "while" then
 		ctx = next_token(src, ctx)
+		local ws_after_while = ctx.ws
 		if ctx.token ~= '(' then
 			print("line " .. line .. ": expected '(' after 'while'")
 			os.exit(1)
 		end
 		ctx = next_token(src, ctx)
+		local ws_before_cond = ctx.ws
 		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+		rnode.ws_before = ws_before_cond
+		rnode.ws_after = ctx.ws
 		if ctx.token ~= ')' then
 			print("line " .. line .. ": expected ')' after while condition")
 			os.exit(1)
 		end
 		ctx = next_token(src, ctx) -- пропуск ')'
+		local ws_after_cond = ctx.ws
 		rnode2, ctx = statement(src, ctx, dbg .. "\t")
-		return node:new_while(rnode, rnode2), ctx
+
+		local res = node:new_while(rnode, rnode2)
+		res.ws_after_while = ws_after_while
+		res.ws_after_cond = ws_after_cond
+		return res, ctx
 	elseif ctx.token == '{' then
 		ctx = next_token(src, ctx) -- пропуск '{'
 		local ws_after_opening = ctx.ws
 		ctx.ws = ""
 		local statements = {}
 		while ctx.token ~= '}' do
-			print(dbg .. "ctx token " .. ctx.token)
 			if #statements > 0 then
 				statements[#statements].ws_after = statements[#statements].ws_after .. ctx.ws
 			end
 
 			rnode, ctx = statement(src, ctx, dbg .. "\t")
-			print(dbg .. "token after " .. ctx.token)
 			if rnode == nil then -- ';'
 				statements[#statements].ws_after = statements[#statements].ws_after .. ';'
 			end
@@ -546,9 +577,11 @@ function statement(src, ctx, dbg)
 			statements[#statements].ws_after = statements[#statements].ws_after .. ctx.ws
 		end
 
+		local prev = {i = ctx.i, token = ctx.token, token_value = ctx.token_value} -- хак, чтобы объявление функции могло вернуться на токен '}'
 		ctx = next_token(src, ctx) -- пропуск '}'
 		local braces = node:new_braces(statements)
 		braces.ws_after_opening = ws_after_opening
+		ctx.prev = prev
 		return braces, ctx
 	elseif ctx.token == tokens.id and ctx.token_value.name == "return" then
 		ctx = next_token(src, ctx)
@@ -711,12 +744,12 @@ function func_decl(src, ctx, dbg)
 	end
 	body, ctx = statement(src, ctx, dbg .. "\t")
 	body.ws_before = ws_before_body
-	print(dbg .. "tokens after body", token, token_value)
+	print(dbg .. "tokens after body", ctx.token, ctx.token_value)
 
 	-- грязный хак (фигурные скобки{} возвращают токен следующий за ними, но нам нужно вернуть })
-	if ctx.i then 
-		ctx.i = ctx.i - 1
-	end
+	ctx.i = ctx.prev.i
+	ctx.token = ctx.prev.token
+	ctx.token_value = ctx.prev.token_value
 	return node:new_func(params, body), ctx
 end
 
@@ -793,7 +826,7 @@ function global_decl(src, ctx, dbg)
 	elseif ctx.token == '(' then -- объявление функции
 		rnode, ctx = func_decl(src, ctx, dbg .. "\t")
 		rnode.ws_after_return_type = ws_after_type
-		print(dbg .. "tokens after func decl", token, token_value)
+		print(dbg .. "tokens after func decl", ctx.token, ctx.token_value)
 		rnode.name = decl_name
 		rnode.return_type = type_id
 		return rnode, ctx

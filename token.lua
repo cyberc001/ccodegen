@@ -112,6 +112,7 @@ function next_token(src, ctx)
 			while i <= src:len() and c ~= '\n' do
 				i, c, c_code = next_char(src, i)
 			end
+			ws = "\n"
 		elseif is_valid_id_char(c_code, true) then -- идентификатор
 			local mods = {}
 			repeat
@@ -125,7 +126,7 @@ function next_token(src, ctx)
 				end
 
 				local beg_i = i - 1
-				while is_valid_id_char(c_code, true) do
+				while is_valid_id_char(c_code) do
 					i, c, c_code = next_char(src, i)
 				end
 				id_name = src:sub(beg_i, i - 2)
@@ -170,6 +171,7 @@ function next_token(src, ctx)
 				while i <= src:len() and c ~= '\n' do
 					i, c, c_code = next_char(src, i)
 				end
+				ws = "\n"
 			else -- оператор деления
 				return new_token_ctx(i, ws, tokens.div)
 			end
