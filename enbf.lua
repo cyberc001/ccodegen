@@ -27,12 +27,26 @@ function node:__tostring()
 	self.dbg = self.dbg or ""
 	return self.dbg .. (self.print and self:print() or "(generic node: type " .. self._type .. ", value [" .. tostring(self.value) .. "])")
 end
+
 -- возвращает исходный код узла
 function node:_src()
 	return tostring(self.value)
 end
 function node:src()
 	return self.ws_before .. self:_src() .. self.ws_after
+end
+
+-- итерация по дочерним узлам
+function node:get_children()
+	if type(self.value) ~= "table" then return {} end
+	return self.value[1] and self.value or {self.value}
+end
+function _get_children_array(self)
+	local children = {}
+	for _, v in ipairs(self.value) do
+		table.insert(children, v)
+	end
+	return children
 end
 
 ---------------------[[ Выражения ]]---------------------
@@ -58,7 +72,9 @@ function node:new_call(name, args)
 			end
 		end
 		return s .. ")"
-	end})
+	end,
+	get_children = _get_children_array
+	})
 end
 function node:new_var(name)
 	return node:new({_type = nodes.var, value = name,
@@ -67,7 +83,11 @@ function node:new_var(name)
 	end,
 	_src = function(self)
 		return self.value
-	end})
+	end,
+	get_children = function(self)
+		return {}
+	end
+	})
 end
 function node:new_cast(cast_type, value)
 	return node:new({_type = nodes.cast, cast_type = cast_type, value = value,
@@ -77,7 +97,8 @@ function node:new_cast(cast_type, value)
 	end,
 	_src = function(self)
 		return "(" .. self.cast_type:src() .. ")" .. self.value:src()
-	end})
+	end
+	})
 end
 
 function node:new_un_op(op, x, postfix)
@@ -88,7 +109,8 @@ function node:new_un_op(op, x, postfix)
 	end,
 	_src = function(self)
 		return token_to_str(self.op) .. self.value:src()
-	end})
+	end
+	})
 end
 function node:new_bin_op(op, x, y)
 	return node:new({_type = nodes.bin_op, op = op, value = {x, y},
@@ -99,7 +121,8 @@ function node:new_bin_op(op, x, y)
 	end,
 	_src = function(self)
 		return self.value[1]:src() .. token_to_str(self.op) .. self.value[2]:src()
-	end})
+	end
+	})
 end
 function node:new_cond(cond, a, b)
 	return node:new({_type = nodes.cond, value = {cond, a, b},
@@ -111,7 +134,8 @@ function node:new_cond(cond, a, b)
 	end,
 	_src = function(self)
 		return self.value[1]:src() .. "?" .. self.value[2]:src() .. ":" .. self.value[3]:src()
-	end})
+	end
+	})
 end
 function node:new_index(x, i)
 	return node:new({_type = nodes.index, value = {x, i},
@@ -122,7 +146,8 @@ function node:new_index(x, i)
 	end,
 	_src = function(self)
 		return self.value[1]:src() .. "[" .. self.value[2]:src() .. "]"
-	end})
+	end
+	})
 end
 
 ---------------------[[ Утверждения ]]---------------------
@@ -139,7 +164,11 @@ function node:new_if(cond, body, else_body)
 	end,
 	_src = function(self)
 		return "if" .. self.ws_after_if .. "(" .. self.cond:src() .. ")" .. self.value[1]:src() .. (self.value[2] and "else" .. self.value[2]:src() or "")
-	end})
+	end,
+	get_children = function(self)
+		return {self.cond, self.value[1], self.value[2]}
+	end
+	})
 end
 function node:new_while(cond, body)
 	return node:new({_type = nodes._while, value = body, cond = cond, ws_after_while = "", ws_after_cond = "",
@@ -150,7 +179,11 @@ function node:new_while(cond, body)
 	end,
 	_src = function(self)
 		return "while" .. self.ws_after_while .. "(" .. self.cond:src() .. ")" .. self.ws_after_cond .. self.value:src()
-	end})
+	end,
+	get_children = function(self)
+		return {self.cond, self.value}
+	end
+	})
 end
 function node:new_return(value)
 	return node:new({_type = nodes._return, value = value,
@@ -162,7 +195,8 @@ function node:new_return(value)
 	end,
 	_src = function(self)
 		return "return" .. (self.value and " " .. self.value:src() or "")
-	end})
+	end
+	})
 end
 function node:new_braces(statements)
 	return node:new({_type = nodes.braces, value = statements, ws_after_opening = "",
@@ -182,13 +216,16 @@ function node:new_braces(statements)
 			end
 		end
 		return s .. "}"
-	end})
+	end,
+	get_children = _get_children_array
+	})
 end
 function node:new_parantheses(value)
 	return node:new({_type = nodes.parantheses, value = value,
 	_src = function(self)
 		return "(" .. self.value:src() .. ")"
-	end})
+	end
+	})
 end
 function node:new_comma(statements)
 	return node:new({_type = nodes.comma, value = statements,
@@ -211,7 +248,9 @@ function node:new_comma(statements)
 			end
 		end
 		return s
-	end})
+	end,
+	get_children = _get_children_array
+	})
 end
 function node:new_decl(_type, id)
 	return node:new({_type = nodes.decl, _type = _type, value = id, ws_mid = "",
@@ -220,7 +259,11 @@ function node:new_decl(_type, id)
 	end,
 	_src = function(self)
 		return tostring(self._type) .. self.ws_mid .. self.value
-	end})
+	end,
+	get_children = function(self)
+		return {}
+	end
+	})
 end
 
 
@@ -246,7 +289,9 @@ function node:new_enum_decl(decls, name)
 			end
 		end
 		return s .. "}"
-	end})
+	end,
+	get_children = _get_children_array
+	})
 end
 
 function node:new_params(params)
@@ -270,7 +315,9 @@ function node:new_params(params)
 			end
 		end
 		return s .. ")"
-	end})
+	end,
+	get_children = _get_children_array
+	})
 end
 
 function node:new_func(params, body, name, return_type)
@@ -283,7 +330,16 @@ function node:new_func(params, body, name, return_type)
 	end,
 	_src = function(self)
 		return (tostring(self.return_type) or "NORETURNTYPE") .. self.ws_after_return_type .. self.name .. self.params:src() .. self.value:src() 
-	end})
+	end,
+	get_children = function(self)
+		local children = {}
+		for _, v in ipairs(self.params) do
+			table.insert(children, v)
+		end
+		table.insert(children, self.value)
+		return children
+	end
+	})
 end
 
 
