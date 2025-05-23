@@ -1,4 +1,5 @@
 require "enbf"
+require "sub"
 local cli = require "cliargs"
 
 cli:splat("SCRIPT_FILES", "Lua scripts that can parse and modify syntax tree", nil, 999)
@@ -10,6 +11,7 @@ if not args and err then
 end
 
 local src = io.read("*a")
+src = do_c_subs(src)
 
 local node
 local ctx = new_token_ctx(1)

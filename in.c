@@ -1,7 +1,6 @@
 void function_parameter() {
     int type;
-    int params;
-    params = 0;
+    int params = /*$$ return math.floor(math.random() * 100) - 50 $$*/;
     while (token != ')') {
         // int name, ...
         type = INT   ;
