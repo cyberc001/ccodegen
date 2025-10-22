@@ -54,17 +54,27 @@ id = {}
 function id:new(o)
 	o = o or {}
 	o.mods = o.mods or {}
+	o.mods_ws = o.mods_ws or {}
 	o.pointers = o.pointers or 0
 	setmetatable(o, self)
 	self.__index = self
 	return o
 end
+function id:has_mod(mod)
+	for _, v in ipairs(self.mods) do
+		if v == mod then
+			return true
+		end
+	end
+	return false
+end
 function id:__tostring()
 	s = ""
-	for _, v in ipairs(self.mods) do
-		s = s .. v .. " "
+	for i, v in ipairs(self.mods) do
+		s = s .. v .. self.mods_ws[i]
 	end
-	s = s .. self.name
+	s = s .. self.mods_ws[#self.mods_ws]
+	if self.name then s = s .. self.name end
 	for i = 1, self.pointers do
 		s = s .. "*"
 	end
@@ -73,6 +83,7 @@ end
 
 line = 1
 identifiers = {
+	struct = { class = classes.type_mod },
 	const = { class = classes.type_mod },
 	short = { class = classes.type_mod },
 	long = { class = classes.type_mod },
@@ -95,6 +106,9 @@ end
 function new_token_ctx(i, ws, token, token_value)
 	return {i = i, token = token, token_value = token_value, ws = ws or ""}
 end
+function copy_token_ctx(ctx)
+	return new_token_ctx(ctx.i, ctx.ws, ctx.token, ctx.token_value)
+end
 
 function next_token(src, ctx)
 	local i = ctx.i
@@ -115,13 +129,19 @@ function next_token(src, ctx)
 			ws = "\n"
 		elseif is_valid_id_char(c_code, true) then -- идентификатор
 			local mods = {}
+			local mods_ws = {}
+			local cur_ws
 			repeat
+				cur_ws = ""
 				while is_ws(c) do -- пропуск пробелов до следующего идентификатора
-					ws = ws .. c
+					cur_ws = cur_ws .. c
 					i, c, c_code = next_char(src, i)
 				end
 
 				if not is_valid_id_char(c_code, true) then
+					id_name = nil
+					table.insert(mods, "") -- заглушка, чтобы строка mods[#mods] не стирала модификаторы, когда name отсутствует
+					table.insert(mods_ws, "")
 					break
 				end
 
@@ -134,11 +154,14 @@ function next_token(src, ctx)
 					identifiers[id_name] = {}
 				end
 				table.insert(mods, id_name)
+				table.insert(mods_ws, cur_ws)
+				print("inserted ws '" .. cur_ws .. "'")
 			until identifiers[id_name].class ~= classes.type_mod
-			
+
 			mods[#mods] = nil
 
-			return new_token_ctx(i - 1, ws, tokens.id, id:new({name = id_name, mods = mods}))
+			print("token end", id_name)
+			return new_token_ctx(i - 1, ws, tokens.id, id:new({name = id_name, mods = mods, mods_ws = mods_ws}))
 		elseif is_number(c_code) then -- распарсить число
 			local ch0 = string.byte('0')
 			local val = c_code - ch0

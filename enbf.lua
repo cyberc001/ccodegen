@@ -1,7 +1,7 @@
 require "token"
 require "os"
 
-local enbf_debug = false
+local enbf_debug = true
 
 nodes = {
 	num = 1, str = 2, char = 3,
@@ -76,13 +76,13 @@ function node:new_call(name, args)
 	get_children = _get_children_array
 	})
 end
-function node:new_var(name)
-	return node:new({_type = nodes.var, value = name,
+function node:new_var(id)
+	return node:new({_type = nodes.var, value = id,
 	print = function(self)
-		return "(var '" .. name .. "')"
+		return "(var '" .. tostring(self.value) .. "')"
 	end,
 	_src = function(self)
-		return self.value
+		return tostring(self.value)
 	end,
 	get_children = function(self)
 		return {}
@@ -252,26 +252,61 @@ function node:new_comma(statements)
 	get_children = _get_children_array
 	})
 end
-function node:new_decl(_type, id)
-	return node:new({_type = nodes.decl, _type = _type, value = id, ws_mid = "",
+function node:new_decl(_type, vars, id_ws)
+	return node:new({_type = nodes.decl, _type = _type, value = vars,
 	print = function(self)
-		return "(decl [" .. tostring(self._type) .. "] '" .. tostring(self.value) .. "')"
+		local s = "(decl [" .. tostring(self._type) .. "]\n"
+		for i, v in ipairs(self.value) do
+			if i > 1 then
+				s = s .. "\n"
+			end
+			v.dbg = self.dbg .. "\t"
+			s = s .. self.dbg .. tostring(v) .. ""
+		end
+		return s .. self.dbg .. ")"
 	end,
 	_src = function(self)
-		return tostring(self._type) .. self.ws_mid .. self.value
+		local s = (self._type == nodes.struct_decl and self._type:src() or tostring(self._type))
+		for i, v in ipairs(self.value) do
+			if i > 1 then
+				s = s .. ','
+			end
+			s = s .. v:src()
+		end
+		return s
 	end,
-	get_children = function(self)
-		return {}
-	end
+	get_children = _get_children_array
 	})
 end
 
+function node:new_struct(decls, name)
+	return node:new({_type = nodes.struct_decl, value = decls, name = name, ws_after_struct = "", ws_after_name = "",
+	print = function(self)
+		local s = "(struct '" .. (self.name and self.name or "") .. "'\n" .. self.dbg .. "\tdeclarations [\n"
+		for _,v in ipairs(self.value) do
+			v.dbg = self.dbg .. "\t"
+			s = s .. tostring(v) .. ",\n"
+		end
+		return s .. self.dbg .. "\t])"
+	end,
+	_src = function(self)
+		local s = (tostring(self.name) or "") .. self.ws_after_struct .. self.ws_after_name .. "{"
+		if #self.value > 0 then
+			for i, v in ipairs(self.value) do
+				s = s .. v:src()
+			end
+		end
+		return s .. "}"
+	end,
+	get_children = _get_children_array
+	})
+end
 
 ---------------------[[ Другое ]]---------------------
 function node:new_enum_decl(decls, name)
 	return node:new({_type = nodes.enum_decl, value = decls, name = name, ws_after_enum = "", ws_after_name = "",
 	print = function(self)
-		local s = "(enum\n" .. self.dbg .. "\tdeclarations [\n"
+		local s = "(enum '" .. self.name .. "'\n" .. self.dbg .. "\tdeclarations [\n"
 		for _,v in ipairs(self.value) do
 			v.dbg = self.dbg .. "\t"
 			s = s ..  tostring(v) .. ",\n"
@@ -320,16 +355,16 @@ function node:new_params(params)
 	})
 end
 
-function node:new_func(params, body, name, return_type)
-	return node:new({_type = nodes.func, value = body, params = params, name = name, return_type = return_type,
+function node:new_func(params, body, id, return_type)
+	return node:new({_type = nodes.func, value = body, params = params, id = id, return_type = return_type,
 	ws_after_return_type = "",
 	print = function(self)
 		self.value.dbg = self.dbg .. "\t"
 		self.params.dbg = self.dbg .. "\t"
-		return "(func '" .. tostring(self.name) .. "', return type " .. tostring(self.return_type) .. "\n" .. self.dbg .. "\tparams\n" .. tostring(self.params) .. "\n" .. self.dbg .. "\tbody\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)"
+		return "(func '" .. tostring(self.id) .. "', return type " .. tostring(self.return_type) .. "\n" .. self.dbg .. "\tparams\n" .. tostring(self.params) .. "\n" .. self.dbg .. "\tbody\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)"
 	end,
 	_src = function(self)
-		return (tostring(self.return_type) or "NORETURNTYPE") .. self.ws_after_return_type .. self.name .. self.params:src() .. self.value:src() 
+		return (tostring(self.return_type) or "NORETURNTYPE") .. self.ws_after_return_type .. tostring(self.id) .. self.params:src() .. self.value:src() 
 	end,
 	get_children = function(self)
 		local children = {}
@@ -455,7 +490,7 @@ function expression(level, src, ctx, dbg)
 
 	-- бинарные и постфиксные операторы
 	while type(ctx.token) == "number" and ctx.token >= level do
-		if enbf_debug then print(dbg .. "token", ctx.token) end
+		if enbf_debug then print(dbg .. "\ttoken", ctx.token, ctx.token_value) end
 		if ctx.token == tokens.assign then
 			unit_node.ws_after = unit_node.ws_after .. ctx.ws
 			ctx = next_token(src, ctx) -- пропуск '='
@@ -524,10 +559,28 @@ function statement(src, ctx, dbg)
 	local rnode, rnode2
 
 	if enbf_debug then print(dbg .. "statement", ctx.token, ctx.token_value) end
-	if ctx.token == tokens.id and (identifiers[ctx.token_value.name].class == classes._type or identifiers[ctx.token_value.name].class == classes.type_mod) then -- объявление переменной
-		local type_id = ctx.token_value
-		ctx = next_token(src, ctx)
-		local ws_after_type = ctx.ws
+	if ctx.token == tokens.id and (identifiers[ctx.token_value.name].class == classes._type or identifiers[ctx.token_value.name].class == classes.type_mod or ctx.token_value:has_mod("struct")) then -- объявление переменной или функции
+		local type_id
+		if enbf_debug then print(dbg .. "\tvariable or function declaration") end
+
+		if ctx.token == tokens.id and ctx.token_value:has_mod("struct") then
+			local struct_token = ctx.token_value
+			ctx = next_token(src, ctx)
+			if ctx.token == '{' then
+				local ws_after_struct = ctx.ws
+				type_id, ctx = struct_decl(src, ctx, dbg .. "\t")
+				type_id.ws_after_struct = ws_after_struct
+				type_id.name = struct_token
+			else
+				type_id = struct_token
+				ctx = next_token(src, ctx)
+			end
+		end
+
+		if not type_id then -- обычный тип данных
+			type_id = ctx.token_value
+			ctx = next_token(src, ctx)
+		end
 
 		while ctx.token == tokens.mul do -- пропуск указателей
 			ctx = next_token(src, ctx)
@@ -535,27 +588,58 @@ function statement(src, ctx, dbg)
 		end
 
 		if ctx.token ~= tokens.id then
-			print("line " .. line .. ": expected variable name in declaration")
-			os.exit(1)
+			if ctx.token ~= ';' or not type_id then 
+				print("line " .. line .. ": expected variable or function name in global declaration")
+				os.exit(1)
+			end
+			-- объявление структуры без имени переменной
+			return type_id, ctx
 		end
-		local var_name = ctx.token_value.name
-		ctx = next_token(src, ctx)
-		local ws_after_decl = ctx.ws
 
-		if ctx.token == tokens.assign then
+		local vars = {}
+		while ctx.token == tokens.id do
+			print("CUR", ctx.token, ctx.token_value)
+			local decl = node:new_var(ctx.token_value)
+			decl.ws_before = ctx.ws
+
 			ctx = next_token(src, ctx)
-			local ws_before_val = ctx.ws
+			decl.ws_after = ctx.ws
+	
+			if ctx.token == tokens.assign then -- объявление переменной с инциализацией
+				ctx = next_token(src, ctx)
+	
+				local ws_after_assign = ctx.ws
+				rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+				rnode.ws_before = ws_after_assign
+				local bin_op = node:new_bin_op(tokens.assign, decl, rnode)
+				table.insert(vars, bin_op)
+			else
+				table.insert(vars, decl)
+			end
 
-			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
-			rnode.ws_before = ws_before_val
-			local decl = node:new_decl(type_id, var_name)
-			decl.ws_mid = ws_after_type
-			decl.ws_after = ws_after_decl
-			return node:new_bin_op(tokens.assign, decl, rnode), ctx
-		else
-			local decl = node:new_decl(type_id, var_name)
-			decl.ws_mid = ws_after_type
-			return decl, ctx
+			if ctx.token ~= ',' then
+				break
+			end
+			ctx = next_token(src, ctx)
+		end
+		print("ENDED ON TOKEN", ctx.token, ctx.token_value)
+
+		if ctx.token == '(' then -- объявление функции
+			rnode, ctx = func_decl(src, ctx, dbg .. "\t")
+			print("DECL ", vars[1])
+			-- полагаем что это var (TODO?)
+			rnode.ws_after_return_type = vars[1].ws_before
+			rnode.id = vars[1].value
+			rnode.return_type = type_id
+			return rnode, ctx
+		else -- объявление переменной
+			if ctx.token ~= ';' then
+				print("line " .. line .. ": expected ';' after variable declaration")
+				os.exit(1)
+			end
+			rnode = node:new_decl(type_id, vars)
+			rnode.ws_after = ctx.ws .. ";"
+			return rnode, ctx
 		end
 	elseif ctx.token == tokens.id and ctx.token_value.name == "if" then
 		ctx = next_token(src, ctx)
@@ -635,7 +719,7 @@ function statement(src, ctx, dbg)
 			statements[#statements].ws_after = statements[#statements].ws_after .. ctx.ws
 		end
 
-		local prev = {i = ctx.i, token = ctx.token, token_value = ctx.token_value} -- хак, чтобы объявление функции могло вернуться на токен '}'
+		local prev = copy_token_ctx(ctx)
 		ctx = next_token(src, ctx) -- пропуск '}'
 		local braces = node:new_braces(statements)
 		braces.ws_after_opening = ws_after_opening
@@ -661,7 +745,6 @@ function statement(src, ctx, dbg)
 			print("line " .. line .. ": expected ';' after statement")
 			os.exit(1)
 		end
-		--ctx = next_token(src, ctx)
 		return rnode, ctx
 	end
 end
@@ -811,6 +894,42 @@ function func_decl(src, ctx, dbg)
 	return node:new_func(params, body), ctx
 end
 
+function struct_decl(src, ctx, dbg)
+	dbg = dbg or ""
+
+	if not ctx.token then
+		print("line " .. line .. ": unexpected EOF of struct declaration")
+		os.exit(1)
+	end
+
+	if enbf_debug then print(dbg .. "struct decl", ctx.token, ctx.token_value) end
+
+	local decls = {}
+	ctx = next_token(src, ctx) -- пропуск '{'
+	while ctx.token ~= '}' and ctx.token do
+		local ws_before = ctx.ws
+		local decl
+		decl, ctx = statement(src, ctx, dbg .. "\t")
+		decl.ws_before = ws_before
+		table.insert(decls, decl)
+		ctx = next_token(src, ctx)
+	end
+	if not ctx.token then
+		print("line " .. line .. ": unexpected EOF of struct declaration")
+		os.exit(1)
+	end
+
+	if #decls > 0 then
+		decls[#decls].ws_after = decls[#decls].ws_after .. ctx.ws
+	end
+
+	ctx = next_token(src, ctx) -- пропуск '}'
+
+	return node:new_struct(decls), ctx
+end
+
+
+
 function global_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
@@ -820,9 +939,10 @@ function global_decl(src, ctx, dbg)
 	end
 
 	-- временные локальные переменные
-	local rnode
+	local rnode, type_id
 
 	if enbf_debug then print(dbg .. "global decl", ctx.token, ctx.token_value) end
+
 	if ctx.token == tokens.id and ctx.token_value.name == "enum" then
 		ctx = next_token(src, ctx)
 		local ws_after_enum = ctx.ws
@@ -851,70 +971,7 @@ function global_decl(src, ctx, dbg)
 		rnode.ws_after_name = ws_after_name
 		return rnode, ctx
 	end
-	
-	local type_id = ctx.token_value
-	ctx = next_token(src, ctx)
 
-	while ctx.token == tokens.mul do -- пропуск указателей
-		ctx = next_token(src, ctx)
-		type_id.pointers = type_id.pointers + 1
-	end
-
-	local unit_nodes = {}
-
-	if ctx.token ~= tokens.id then
-		print("line " .. line .. ": expected variable or function name in global declaration")
-		os.exit(1)
-	end
-	local decl_name = ctx.token_value.name
-	local ws_after_type = ctx.ws
-	ctx = next_token(src, ctx)
-
-	if ctx.token == tokens.assign then -- объявление переменной с инициализацией
-		local ws_after_id = ctx.ws
-		ctx = next_token(src, ctx)
-		local ws_before_val = ctx.ws
-		
-		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
-		rnode.ws_before = ws_before_val
-		local decl = node:new_decl(type_id, decl_name)
-		decl.ws_after = ws_after_id
-		decl.ws_mid = ws_after_type
-		unit_nodes[1] = node:new_bin_op(tokens.assign, decl, rnode)
-	elseif ctx.token == '(' then -- объявление функции
-		rnode, ctx = func_decl(src, ctx, dbg .. "\t")
-		rnode.ws_after_return_type = ws_after_type
-		rnode.name = decl_name
-		rnode.return_type = type_id
-		return rnode, ctx
-	else -- объявление переменной
-		unit_nodes[1] = node:new_decl(type_id, decl_name)
-		unit_nodes[1].ws_mid = ws_mid_decl
-	end
-
-	while ctx.token ~= ';' and ctx.token ~= '}' do
-		if ctx.token ~= tokens.id then
-			print("line " .. line .. ": expected variable or function name in global declaration")
-			os.exit(1)
-		end
-		local decl_name = ctx.token_value.name
-		ctx = next_token(src, ctx)
-
-		if ctx.token == tokens.assign then -- объявление переменной с инициализацией
-			ctx = next_token(src, ctx)
-			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
-			table.insert(unit_nodes, node:new_bin_op(tokens.assign, node:new_var(decl_name), rnode))
-		elseif ctx.token == '(' then -- объявление функции
-			print("line " .. line .. ": unexpected function in global declaration")
-			os.exit(1)
-		else -- объявление переменной
-			table.insert(unit_nodes, node:new_var(decl_name))
-		end
-	end
-
-	local comma = node:new_comma(unit_nodes)
-	if ctx.token == ';' then
-		comma.ws_after = comma.ws_after .. ';'
-	end
-	return comma, ctx
+	rnode, ctx = statement(src, ctx, dbg .. "\t")
+	return rnode, ctx
 end
