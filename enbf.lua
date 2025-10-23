@@ -182,14 +182,50 @@ function node:new_if(cond, body, else_body)
 	})
 end
 function node:new_while(cond, body)
-	return node:new({_type = nodes._while, value = body, cond = cond, ws_after_while = "", ws_after_cond = "",
+	return node:new({_type = nodes._while, value = body, cond = cond, ws_after_while = "", ws_before_body = "",
 	print = function(self)
 		self.cond.dbg = self.dbg .. "\t"
 		self.value.dbg = self.dbg .. "\t"
 		return "(while\n" .. self.dbg .. "\tcond\n" .. tostring(self.cond) .. ",\n" .. self.dbg .. "\tbody\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)"
 	end,
 	_src = function(self)
-		return "while" .. self.ws_after_while .. "(" .. self.cond:src() .. ")" .. self.ws_after_cond .. self.value:src()
+		return "while" .. self.ws_after_while .. "(" .. self.cond:src() .. ")" .. self.ws_before_body .. self.value:src()
+	end,
+	get_children = function(self)
+		return {self.cond, self.value}
+	end
+	})
+end
+function node:new_for(begin, cond, iter, body)
+	return node:new({_type = nodes._for, value = body, begin = begin, cond = cond, iter = iter, ws_after_for = "", ws_before_body = "", ws_for_nil_statements = {},
+	print = function(self)
+		if self.begin then self.begin.dbg = self.dbg .. "\t" end
+		if self.cond then self.cond.dbg = self.dbg .. "\t" end
+		if self.iter then self.iter.dbg = self.dbg .. "\t" end
+		self.value.dbg = self.dbg .. "\t"
+		return "(for\n"
+			.. self.dbg .. "\tbegin" .. (self.begin and "\n" .. tostring(self.begin) or " nil") .. ",\n"
+			.. self.dbg .. "\tcond" .. (self.cond and "\n" .. tostring(self.cond) or " nil") .. ",\n"
+			.. self.dbg .. "\titer" .. (self.iter and "\n" .. tostring(self.iter) or " nil") .. ",\n"
+			.. self.dbg .. "\tbody\n" .. tostring(self.value) .. "\n"
+			.. self.dbg .. "\t)"
+	end,
+	_src = function(self)
+		local s = "for" .. self.ws_after_for .. "("
+		local nil_statement_i = 0
+		local statements = {self.begin, self.cond, self.iter}
+		for i = 1, 3 do
+			if not statements[i] then
+				nil_statement_i = nil_statement_i + 1
+				s = s .. self.ws_for_nil_statements[nil_statement_i]
+			else
+				s = s .. statements[i]:src()
+			end
+			if i < 3 then
+				s = s .. ";"
+			end
+		end
+		return s .. ")" .. self.ws_before_body .. self.value:src()
 	end,
 	get_children = function(self)
 		return {self.cond, self.value}
@@ -731,6 +767,7 @@ function statement(src, ctx, dbg)
 			os.exit(1)
 		end
 		ctx = next_token(src, ctx)
+
 		local ws_before_cond = ctx.ws
 		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 		rnode.ws_before = ws_before_cond
@@ -740,12 +777,77 @@ function statement(src, ctx, dbg)
 			os.exit(1)
 		end
 		ctx = next_token(src, ctx) -- пропуск ')'
-		local ws_after_cond = ctx.ws
+		local ws_before_body = ctx.ws
 		rnode2, ctx = statement(src, ctx, dbg .. "\t")
 
 		local res = node:new_while(rnode, rnode2)
 		res.ws_after_while = ws_after_while
-		res.ws_after_cond = ws_after_cond
+		res.ws_before_body = ws_before_body
+		return res, ctx
+	elseif ctx.token == tokens.id and ctx.token_value.name == "for" then
+		ctx = next_token(src, ctx)
+		local ws_after_for = ctx.ws
+		if ctx.token ~= '(' then
+			print("line " .. line .. ": expected '(' after 'for'")
+			os.exit(1)
+		end
+
+		local res = node:new_for(begin, cond, iter, rnode2)
+
+		ctx = next_token(src, ctx) -- пропуск '('
+		local ws_before = ctx.ws
+		res.begin, ctx = statement(src, ctx, dbg .. "\t")
+		if res.begin then
+			res.begin.ws_before = ws_before
+			res.begin.ws_after = ctx.ws
+		else
+			table.insert(res.ws_for_nil_statements, ws_before)
+		end
+		if ctx.token ~= ';' and res.begin then
+			print("line " .. line .. ": expected ';' after beginning statement of 'for' loop, got " .. token_to_str(ctx.token))
+			os.exit(1)
+		end
+
+		if res.begin then -- если res.begin == nil, то пустое утверждение ';' уже было пропущено
+			ctx = next_token(src, ctx) -- пропуск ';'
+		end
+		ws_before = ctx.ws
+		res.cond, ctx = statement(src, ctx, dbg .. "\t")
+		if res.cond then
+			res.cond.ws_before = ws_before
+			res.cond.ws_after = ctx.ws
+		else
+			table.insert(res.ws_for_nil_statements, ws_before)
+		end
+		if ctx.token ~= ';' and res.cond then
+			print("line " .. line .. ": expected ';' after conditional statement of 'for' loop, got " .. token_to_str(ctx.token))
+			os.exit(1)
+		end
+
+		if res.cond then -- если res.cond == nil, то пустое утверждение ';' уже было пропущено
+			ctx = next_token(src, ctx) -- пропуск ';'
+		end
+		ws_before = ctx.ws
+		res.iter, ctx = statement(src, ctx, dbg .. "\t")
+		if res.iter then
+			res.iter.ws_before = ws_before
+			res.iter.ws_after = ctx.ws
+		else
+			table.insert(res.ws_for_nil_statements, ws_before)
+		end
+
+		if ctx.token ~= ')' then
+			print("line " .. line .. ": expected ')' after iterating statement of 'for' loop")
+			os.exit(1)
+		end
+
+		ctx = next_token(src, ctx) -- пропуск ')'
+		local ws_before_body = ctx.ws
+		res.value, ctx = statement(src, ctx, dbg .. "\t")
+		print("GOT BODY", res.value)
+
+		res.ws_after_for = ws_after_for
+		res.ws_before_body = ws_before_body
 		return res, ctx
 	elseif ctx.token == '{' then
 		ctx = next_token(src, ctx) -- пропуск '{'
@@ -799,8 +901,8 @@ function statement(src, ctx, dbg)
 		return nil, ctx
 	else -- присваивание или вызов функции
 		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
-		if ctx.token ~= ';' then
-			print("line " .. line .. ": expected ';' after statement")
+		if ctx.token ~= ';' and ctx.token ~= ')' then
+			print("line " .. line .. ": expected ';' or ')' after statement, got " .. token_to_str(ctx.token))
 			os.exit(1)
 		end
 		return rnode, ctx
