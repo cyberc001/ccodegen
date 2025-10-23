@@ -27,7 +27,13 @@ function node:new(o)
 end
 function node:__tostring()
 	self.dbg = self.dbg or ""
-	return self.dbg .. (self.print and self:print() or "(generic node: type " .. self._type .. ", value [" .. tostring(self.value) .. "])")
+	local dbg_append = ""
+	if type(self.value) == "table" then
+		self.value.dbg = self.dbg .. "\t"
+	else
+		dbg_append = self.dbg .. "\t"
+	end
+	return self.dbg .. (self.print and self:print() or "(generic node: type " .. self._type .. ", value [\n" .. dbg_append .. tostring(self.value) .. "\n" .. self.dbg .. "])")
 end
 
 -- возвращает исходный код узла
@@ -98,7 +104,7 @@ function node:new_cast(cast_type, value)
 		return "(cast\n" .. self.dbg .. "\ttype " .. tostring(self.cast_type) .. "\n" .. self.dbg .. "\tvalue\n" .. tostring(value) .. "\n" .. self.dbg .. ")"
 	end,
 	_src = function(self)
-		return "(" .. self.cast_type:src() .. ")" .. self.value:src()
+		return "(" .. tostring(self.cast_type) .. ")" .. self.value:src()
 	end
 	})
 end
@@ -266,9 +272,9 @@ function node:new_decl(var_type, vars)
 				s = s .. "\n"
 			end
 			v.dbg = self.dbg .. "\t"
-			s = s .. self.dbg .. tostring(v) .. ""
+			s = s .. tostring(v) .. ""
 		end
-		return s .. self.dbg .. ")"
+		return s .. "\n" .. self.dbg .. ")"
 	end,
 	_src = function(self)
 		local s = (self.var_type._type == nodes.compound and self.var_type:src() or tostring(self.var_type))
@@ -342,7 +348,7 @@ function node:new_params(params)
 			v.dbg = self.dbg .. "\t"
 			s = s ..  tostring(v) .. ",\n"
 		end
-		return s .. self.dbg .. "\t])"
+		return s .. self.dbg .. "])"
 	end,
 	_src = function(self)
 		local s = "("
@@ -449,7 +455,7 @@ function expression(level, src, ctx, dbg)
 		end
 	elseif ctx.token == '(' then
 		ctx = next_token(src, ctx)
-		if ctx.token == tokens.id and (identifiers[ctx.token_value.name].class == classes._type or identifiers[ctx.token_value.name].class == classes.type_mod) then -- приведение типов
+		if ctx.token == tokens.id and (is_token_compound(ctx.token_value) or (identifiers[ctx.token_value.name].class == classes._type or identifiers[ctx.token_value.name].class == classes.type_mod)) then -- приведение типов
 			local cast_type = ctx.token_value
 			ctx = next_token(src, ctx)
 			while ctx.token == tokens.mul do -- пропуск указателей
@@ -598,7 +604,7 @@ function statement(src, ctx, dbg)
 				type_id.name = name_token
 			else
 				type_id = name_token
-				ctx = next_token(src, ctx)
+				--ctx = next_token(src, ctx) FIXME
 			end
 		end
 
@@ -669,24 +675,24 @@ function statement(src, ctx, dbg)
 			ctx = next_token(src, ctx)
 		end
 
+
 		if ctx.token == '(' then -- объявление функции
 			rnode, ctx = func_decl(src, ctx, dbg .. "\t")
-			-- полагаем что это var (TODO?)
 			rnode.ws_after_return_type = vars[1].ws_before
 			rnode.id = vars[1].value
 			rnode.return_type = type_id
 			return rnode, ctx
-		else -- объявление переменной (переменных)
-			if ctx.token ~= ';' then
-				print("line " .. line .. ": expected ';' after variable declaration")
-				os.exit(1)
-			end
-			if #vars > 0 then
-				vars[#vars].ws_after = "" -- избегаем дублирования с ws_after самого утверждения
-			end
-			rnode = node:new_decl(type_id, vars)
-			return rnode, ctx
 		end
+		-- объявление переменной (переменных)
+		if ctx.token ~= ';' then
+			print("line " .. line .. ": expected ';' after variable declaration")
+			os.exit(1)
+		end
+		if #vars > 0 then
+			vars[#vars].ws_after = "" -- избегаем дублирования с ws_after самого утверждения
+		end
+		rnode = node:new_decl(type_id, vars)
+		return rnode, ctx
 	elseif ctx.token == tokens.id and ctx.token_value.name == "if" then
 		ctx = next_token(src, ctx)
 		local ws_after_if = ctx.ws
@@ -781,7 +787,7 @@ function statement(src, ctx, dbg)
 		end
 		rnode = node:new_return(rnode)
 		if ctx.token ~= ';' then
-			print("line " .. line .. ": expected ';' after 'return'")
+			print("line " .. line .. ": expected ';' after 'return', got " .. token_to_str(ctx.token))
 			os.exit(1)
 		end
 		rnode.ws_after = ctx.ws .. ';'
@@ -877,10 +883,11 @@ function func_params(src, ctx, dbg)
 			print("line " .. line .. ": expected a type identifier")
 			os.exit(1)
 		end
-		if identifiers[ctx.token_value.name].class ~= classes._type and identifiers[ctx.token_value.name].class ~= classes.type_mod then
+		if not is_token_compound(ctx.token_value) and (identifiers[ctx.token_value.name].class ~= classes._type and identifiers[ctx.token_value.name].class ~= classes.type_mod) then
 			print("line " .. line .. ": identifier is not a type")
 			os.exit(1)
 		end
+		local ws_before_type = ctx.ws
 		local type_id = ctx.token_value
 
 		ctx = next_token(src, ctx)
@@ -894,12 +901,13 @@ function func_params(src, ctx, dbg)
 			os.exit(1)
 		end
 
-		local decl = node:new_var(ctx.token_value)
-		decl.ws_before = ctx.ws
+		local var = node:new_var(ctx.token_value)
+		var.ws_before = ctx.ws
 		ctx = next_token(src, ctx)
-		decl.ws_after = ctx.ws
-		table.insert(params, node:new_decl(type_id, {decl}))
-
+		var.ws_after = ctx.ws
+		local decl = node:new_decl(type_id, {var})
+		decl.ws_before = ws_before_type
+		table.insert(params, decl)
 		if ctx.token == ',' then
 			ctx = next_token(src, ctx)
 		end
