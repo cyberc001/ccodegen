@@ -29,7 +29,6 @@ function token_to_str(token)
 	if token == tokens._not then return '~' end
 	if token == tokens.inc then return '++' end
 	if token == tokens.dec then return '--' end
-	if token == tokens.brack then return '[]' end
 
 	return tostring(token)
 end
@@ -294,8 +293,6 @@ function next_token(src, ctx)
 			return new_token_ctx(i, ws, tokens.mod)
 		elseif c == '*' then
 			return new_token_ctx(i, ws, tokens.mul)
-		elseif c == '[' then
-			return new_token_ctx(i, ws, tokens.brack)
 		elseif c == '?' then
 			return new_token_ctx(i, ws, tokens.cond)
 		elseif c == '~' then

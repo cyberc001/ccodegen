@@ -140,14 +140,17 @@ function node:new_cond(cond, a, b)
 	})
 end
 function node:new_index(x, i)
-	return node:new({_type = nodes.index, value = {x, i},
+	-- ws_before_closing_bracket нужен только в том случае, если self.value[2] == nil (пустые квадратные скобки)
+	return node:new({_type = nodes.index, value = {x, i}, ws_before_brackets = "", ws_before_closing_bracket = "",
 	print = function(self)
 		self.value[1].dbg = self.dbg .. "\t"
-		self.value[2].dbg = self.dbg .. "\t"
-		return "(index, values\n" .. tostring(self.value[1]) .. ",\n" .. tostring(self.value[2]) .. "\n" .. self.dbg .. ")"
+		if self.value[2] then
+			self.value[2].dbg = self.dbg .. "\t"
+		end
+		return "(index, values\n" .. tostring(self.value[1]) .. ",\n\t" .. self.dbg .. tostring(self.value[2]) .. "\n" .. self.dbg .. ")"
 	end,
 	_src = function(self)
-		return self.value[1]:src() .. "[" .. self.value[2]:src() .. "]"
+		return self.value[1]:src() .. self.ws_before_brackets .. "[" .. (self.value[2] and self.value[2]:src() or self.ws_before_brackets) .. self.ws_before_closing_bracket .. "]"
 	end
 	})
 end
@@ -188,7 +191,7 @@ function node:new_while(cond, body)
 	})
 end
 function node:new_return(value)
-	return node:new({_type = nodes._return, value = value,
+	return node:new({_type = nodes._return, value = value, ws_after_return = "",
 	print = function(self)
 		if self.value then
 			self.value.dbg = self.dbg .. "\t"
@@ -196,7 +199,7 @@ function node:new_return(value)
 		return "(return" .. (self.value and "\n" .. self.dbg .. "\tvalue\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)" or ")")
 	end,
 	_src = function(self)
-		return "return" .. (self.value and " " .. self.value:src() or "")
+		return "return" .. self.ws_after_return .. (self.value and " " .. self.value:src() or "")
 	end
 	})
 end
@@ -254,7 +257,7 @@ function node:new_comma(statements)
 	get_children = _get_children_array
 	})
 end
-function node:new_decl(var_type, vars, id_ws)
+function node:new_decl(var_type, vars)
 	return node:new({_type = nodes.decl, var_type = var_type, value = vars,
 	print = function(self)
 		local s = "(decl [" .. tostring(self.var_type) .. "]\n"
@@ -366,7 +369,7 @@ function node:new_func(params, body, id, return_type)
 		return "(func '" .. tostring(self.id) .. "', return type " .. tostring(self.return_type) .. "\n" .. self.dbg .. "\tparams\n" .. tostring(self.params) .. "\n" .. self.dbg .. "\tbody\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)"
 	end,
 	_src = function(self)
-		return (tostring(self.return_type) or "NORETURNTYPE") .. self.ws_after_return_type .. tostring(self.id) .. self.params:src() .. self.value:src() 
+		return (tostring(self.return_type) or "NORETURNTYPE") .. self.ws_after_return_type .. tostring(self.id) .. self.params:src() .. self.value:src()
 	end,
 	get_children = function(self)
 		local children = {}
@@ -525,7 +528,7 @@ function expression(level, src, ctx, dbg)
 		elseif ctx.token == tokens.inc or ctx.token == tokens.dec then
 			unit_node = node:new_un_op(ctx.token, unit_node, true)
 			ctx = next_token(src, ctx)
-		elseif ctx.token == tokens.brack then
+		elseif ctx.token == '[' then
 			ctx = next_token(src, ctx)
 			local ws_before_idx = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
@@ -605,15 +608,34 @@ function statement(src, ctx, dbg)
 
 			ctx = next_token(src, ctx)
 			decl.ws_after = ctx.ws
-	
-			if ctx.token == tokens.assign then -- объявление переменной с инциализацией
+
+			if ctx.token == '[' then
+				ctx = next_token(src, ctx)
+				local ws_before_idx = ctx.ws
+				rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+				if ctx.token ~= ']' then
+					print("line " .. line .. ": expected ']' to close indexing operator")
+					os.exit(1)
+				end
+
+				local ws_before_closing_bracket = ctx.ws
+				if rnode then
+					rnode.ws_before = rnode.ws_before .. ws_before_idx
+					rnode.ws_after = rnode.ws_after .. ws_before_closing_bracket
+					ws_before_closing_bracket = ""
+				end
+				ctx = next_token(src, ctx)
+				local index_op = node:new_index(decl, rnode)
+				index_op.ws_before_closing_bracket = ws_before_closing_bracket
+				table.insert(vars, index_op)
+			elseif ctx.token == tokens.assign then -- объявление переменной с инциализацией
 				ctx = next_token(src, ctx)
 	
 				local ws_after_assign = ctx.ws
 				rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 				rnode.ws_before = ws_after_assign
-				local bin_op = node:new_bin_op(tokens.assign, decl, rnode)
-				table.insert(vars, bin_op)
+				local assign_op = node:new_bin_op(tokens.assign, decl, rnode)
+				table.insert(vars, assign_op)
 			else
 				table.insert(vars, decl)
 			end
@@ -631,13 +653,15 @@ function statement(src, ctx, dbg)
 			rnode.id = vars[1].value
 			rnode.return_type = type_id
 			return rnode, ctx
-		else -- объявление переменной
+		else -- объявление переменной (переменных)
 			if ctx.token ~= ';' then
 				print("line " .. line .. ": expected ';' after variable declaration")
 				os.exit(1)
 			end
+			if #vars > 0 then
+				vars[#vars].ws_after = "" -- избегаем дублирования с ws_after самого утверждения
+			end
 			rnode = node:new_decl(type_id, vars)
-			rnode.ws_after = ctx.ws .. ";"
 			return rnode, ctx
 		end
 	elseif ctx.token == tokens.id and ctx.token_value.name == "if" then
@@ -726,15 +750,22 @@ function statement(src, ctx, dbg)
 		return braces, ctx
 	elseif ctx.token == tokens.id and ctx.token_value.name == "return" then
 		ctx = next_token(src, ctx)
+		local ws_after_return = ""
+		rnode = nil
 		if ctx.token ~= ';' then
+			ws_after_return = ctx.ws
 			rnode, ctx = statement(src, ctx, dbg .. "\t")
 		end
+		rnode = node:new_return(rnode)
 		if ctx.token ~= ';' then
 			print("line " .. line .. ": expected ';' after 'return'")
 			os.exit(1)
 		end
+		rnode.ws_after = ctx.ws .. ';'
+
 		ctx = next_token(src, ctx) -- пропуск ';'
-		return node:new_return(rnode), ctx
+		rnode.ws_after_return = ws_after_return
+		return rnode, ctx
 	elseif ctx.token == ';' then -- пустое утверждение
 		ctx = next_token(src, ctx)
 		return nil, ctx
@@ -828,7 +859,7 @@ function func_params(src, ctx, dbg)
 			print("line " .. line .. ": identifier is not a type")
 			os.exit(1)
 		end
-		local type_id = token_value
+		local type_id = ctx.token_value
 
 		ctx = next_token(src, ctx)
 		while ctx.token == tokens.mul do -- пропуск указателей
@@ -841,9 +872,12 @@ function func_params(src, ctx, dbg)
 			os.exit(1)
 		end
 
-		table.insert(params, node:new_decl(type_id, token_value.name))
-
+		local decl = node:new_var(ctx.token_value)
+		decl.ws_before = ctx.ws
 		ctx = next_token(src, ctx)
+		decl.ws_after = ctx.ws
+		table.insert(params, node:new_decl(type_id, {decl}))
+
 		if ctx.token == ',' then
 			ctx = next_token(src, ctx)
 		end
