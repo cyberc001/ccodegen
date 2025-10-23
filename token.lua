@@ -29,6 +29,7 @@ function token_to_str(token)
 	if token == tokens._not then return '~' end
 	if token == tokens.inc then return '++' end
 	if token == tokens.dec then return '--' end
+	if token == tokens.brack then return '[' end
 
 	return tostring(token)
 end
@@ -181,12 +182,10 @@ function next_token(src, ctx)
 			mods[#mods] = nil
 
 			if #mods > 0 and not identifiers[id_name] and not compound then -- неявно указанный тип перед именем переменной
-				print("fuck you", id_name, mods[1], compound)
 				i = id_name_beg_i + 1
 				id_name = nil
-			elseif not identifiers[id_name] then
-				identifiers[id_name] = {}
 			end
+
 
 			return new_token_ctx(i - 1, ws, tokens.id, id:new({name = id_name, mods = mods, mods_ws = mods_ws}))
 		elseif is_number(c_code) then -- распарсить число
@@ -319,6 +318,8 @@ function next_token(src, ctx)
 			return new_token_ctx(i, ws, tokens.cond)
 		elseif c == '~' then
 			return new_token_ctx(i, ws, tokens._not)
+		elseif c == '[' then
+			return new_token_ctx(i, ws, tokens.brack)
 		else
 			return new_token_ctx(i, ws, c)
 		end

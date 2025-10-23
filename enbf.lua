@@ -556,8 +556,13 @@ function expression(level, src, ctx, dbg)
 	end
 
 	-- бинарные и постфиксные операторы
-	while not(type(ctx.token) == "string" and (ctx.token ~= ';' or ctx.token ~= ',')) and ctx.token >= level do
+	while type(ctx.token) == "number" and ctx.token >= level do
 		if enbf_debug then print(dbg .. "\ttoken", ctx.token, ctx.token_value) end
+
+		if type(ctx.token) == "string" and (ctx.token == ';' or ctx.token == ')') then
+			break
+		end
+
 		if ctx.token == tokens.assign then
 			unit_node.ws_after = unit_node.ws_after .. ctx.ws
 			ctx = next_token(src, ctx) -- пропуск '='
@@ -590,7 +595,7 @@ function expression(level, src, ctx, dbg)
 		elseif ctx.token == tokens.inc or ctx.token == tokens.dec then
 			unit_node = node:new_un_op(ctx.token, unit_node, true)
 			ctx = next_token(src, ctx)
-		elseif ctx.token == '[' then
+		elseif ctx.token == tokens.brack then
 			ctx = next_token(src, ctx)
 			local ws_before_idx = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
@@ -655,7 +660,7 @@ function statement(src, ctx, dbg)
 
 		if ctx.token ~= tokens.id then
 			if ctx.token ~= ';' or not type_id then 
-				print("line " .. line .. ": expected variable or function name in global declaration")
+				print("line " .. line .. ": expected variable or function name in global declaration, got " .. token_to_str(ctx.token))
 				os.exit(1)
 			end
 			-- объявление структуры без имени переменной
@@ -663,10 +668,8 @@ function statement(src, ctx, dbg)
 		end
 
 		local vars = {}
-		print("TYPE", type_id)
 		while ctx.token == tokens.id do
 			local decl = node:new_var(ctx.token_value)
-			print("DECL", ctx.token_value)
 			decl.ws_before = ctx.ws
 
 			ctx = next_token(src, ctx)
@@ -703,7 +706,6 @@ function statement(src, ctx, dbg)
 				local assign_op = node:new_bin_op(tokens.assign, decl, rnode)
 				table.insert(vars, assign_op)
 			else
-				print("INSERTING", decl)
 				table.insert(vars, decl)
 			end
 
@@ -723,7 +725,6 @@ function statement(src, ctx, dbg)
 		end
 		-- объявление переменной (переменных)
 		if ctx.token ~= ';' then
-			print("TOKEN VALUE", ctx.token_value)
 			print("line " .. line .. ": expected ';' after variable declaration, got " .. token_to_str(ctx.token))
 			os.exit(1)
 		end
@@ -731,6 +732,11 @@ function statement(src, ctx, dbg)
 			vars[#vars].ws_after = "" -- избегаем дублирования с ws_after самого утверждения
 		end
 		rnode = node:new_decl(type_id, vars)
+
+		for _, v in ipairs(vars) do -- объявление идентификаторов
+			identifiers[v.value] = {}
+		end
+
 		return rnode, ctx
 	elseif ctx.token == tokens.id and ctx.token_value.name == "if" then
 		ctx = next_token(src, ctx)
@@ -847,7 +853,6 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx) -- пропуск ')'
 		local ws_before_body = ctx.ws
 		res.value, ctx = statement(src, ctx, dbg .. "\t")
-		print("GOT BODY", res.value)
 
 		res.ws_after_for = ws_after_for
 		res.ws_before_body = ws_before_body
