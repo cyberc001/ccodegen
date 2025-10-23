@@ -191,7 +191,7 @@ function node:new_while(cond, body)
 	})
 end
 function node:new_return(value)
-	return node:new({_type = nodes._return, value = value, ws_after_return = "",
+	return node:new({_type = nodes._return, value = value,
 	print = function(self)
 		if self.value then
 			self.value.dbg = self.dbg .. "\t"
@@ -199,7 +199,7 @@ function node:new_return(value)
 		return "(return" .. (self.value and "\n" .. self.dbg .. "\tvalue\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)" or ")")
 	end,
 	_src = function(self)
-		return "return" .. self.ws_after_return .. (self.value and " " .. self.value:src() or "")
+		return "return" .. (self.value and self.value:src() or "")
 	end
 	})
 end
@@ -232,8 +232,8 @@ function node:new_parantheses(value)
 	end
 	})
 end
-function node:new_comma(statements)
-	return node:new({_type = nodes.comma, value = statements,
+function node:new_comma(value)
+	return node:new({_type = nodes.comma, value = value,
 	print = function(self)
 		local s = "(comma\n" .. self.dbg .. "\tstatements [\n"
 		for _,v in ipairs(self.value) do
@@ -491,10 +491,30 @@ function expression(level, src, ctx, dbg)
 			rnode, ctx = expression(tokens.inc, src, ctx, dbg .. "\t")
 			unit_node = node:new_un_op(tokens.sub, rnode)
 		end
+	elseif ctx.token == '{' then -- list-initializer
+		ctx = next_token(src, ctx)
+		local values = {}
+		while ctx.token ~= '}' do
+			local ws_before = ctx.ws
+			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+			rnode.ws_before = ws_before
+			table.insert(values, rnode)
+			if ctx.token == ',' then
+				ctx = next_token(src, ctx)
+			elseif ctx.token ~= '}' then
+				print("line " .. line .. ": expected '}' to end a list-initializer")
+				os.exit(1)
+			end
+		end
+		if #values > 0 then
+			values[#values].ws_after = ctx.ws
+		end
+		ctx = next_token(src, ctx)
+		return node:new_braces({node:new_comma(values)}), ctx
 	end
 
 	-- бинарные и постфиксные операторы
-	while type(ctx.token) == "number" and ctx.token >= level do
+	while not(type(ctx.token) == "string" and (ctx.token ~= ';' or ctx.token ~= ',')) and ctx.token >= level do
 		if enbf_debug then print(dbg .. "\ttoken", ctx.token, ctx.token_value) end
 		if ctx.token == tokens.assign then
 			unit_node.ws_after = unit_node.ws_after .. ctx.ws
@@ -625,10 +645,13 @@ function statement(src, ctx, dbg)
 					ws_before_closing_bracket = ""
 				end
 				ctx = next_token(src, ctx)
-				local index_op = node:new_index(decl, rnode)
-				index_op.ws_before_closing_bracket = ws_before_closing_bracket
-				table.insert(vars, index_op)
-			elseif ctx.token == tokens.assign then -- объявление переменной с инциализацией
+				local idx = node:new_index(decl, rnode)
+				idx.ws_before_closing_bracket = ws_before_closing_bracket
+				idx.ws_after = ctx.ws
+				decl = idx
+			end
+
+			if ctx.token == tokens.assign then -- объявление переменной с инициализацией
 				ctx = next_token(src, ctx)
 	
 				local ws_after_assign = ctx.ws
@@ -750,11 +773,11 @@ function statement(src, ctx, dbg)
 		return braces, ctx
 	elseif ctx.token == tokens.id and ctx.token_value.name == "return" then
 		ctx = next_token(src, ctx)
-		local ws_after_return = ""
 		rnode = nil
 		if ctx.token ~= ';' then
-			ws_after_return = ctx.ws
-			rnode, ctx = statement(src, ctx, dbg .. "\t")
+			local ws_before = ctx.ws
+			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+			rnode.ws_before = ws_before
 		end
 		rnode = node:new_return(rnode)
 		if ctx.token ~= ';' then
@@ -764,7 +787,6 @@ function statement(src, ctx, dbg)
 		rnode.ws_after = ctx.ws .. ';'
 
 		ctx = next_token(src, ctx) -- пропуск ';'
-		rnode.ws_after_return = ws_after_return
 		return rnode, ctx
 	elseif ctx.token == ';' then -- пустое утверждение
 		ctx = next_token(src, ctx)
@@ -1006,5 +1028,9 @@ function global_decl(src, ctx, dbg)
 	end
 
 	rnode, ctx = statement(src, ctx, dbg .. "\t")
+	rnode.ws_after = rnode.ws_after .. ctx.ws
+	if ctx.token == ';' then
+		rnode.ws_after = rnode.ws_after .. ';'
+	end
 	return rnode, ctx
 end
