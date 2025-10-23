@@ -10,7 +10,9 @@ nodes = {
 	un_op = 30, bin_op = 31, cond = 32, index = 33,
 	parantheses = 40, braces = 41, comma = 42,
 
-	_if = 50, _while = 51
+	_if = 50, _while = 51,
+
+	compound = 60
 }
 
 node = {}
@@ -252,10 +254,10 @@ function node:new_comma(statements)
 	get_children = _get_children_array
 	})
 end
-function node:new_decl(_type, vars, id_ws)
-	return node:new({_type = nodes.decl, _type = _type, value = vars,
+function node:new_decl(var_type, vars, id_ws)
+	return node:new({_type = nodes.decl, var_type = var_type, value = vars,
 	print = function(self)
-		local s = "(decl [" .. tostring(self._type) .. "]\n"
+		local s = "(decl [" .. tostring(self.var_type) .. "]\n"
 		for i, v in ipairs(self.value) do
 			if i > 1 then
 				s = s .. "\n"
@@ -266,7 +268,7 @@ function node:new_decl(_type, vars, id_ws)
 		return s .. self.dbg .. ")"
 	end,
 	_src = function(self)
-		local s = (self._type == nodes.struct_decl and self._type:src() or tostring(self._type))
+		local s = (self.var_type._type == nodes.compound and self.var_type:src() or tostring(self.var_type))
 		for i, v in ipairs(self.value) do
 			if i > 1 then
 				s = s .. ','
@@ -279,10 +281,10 @@ function node:new_decl(_type, vars, id_ws)
 	})
 end
 
-function node:new_struct(decls, name)
-	return node:new({_type = nodes.struct_decl, value = decls, name = name, ws_after_struct = "", ws_after_name = "",
+function node:new_compound(decls, compound_type, name)
+	return node:new({_type = nodes.compound, value = decls, name = name, ws_after_type = "", ws_after_name = "",
 	print = function(self)
-		local s = "(struct '" .. (self.name and self.name or "") .. "'\n" .. self.dbg .. "\tdeclarations [\n"
+		local s = "(compound '" .. (self.name and tostring(self.name) or "") .. "'\n" .. self.dbg .. "\tdeclarations [\n"
 		for _,v in ipairs(self.value) do
 			v.dbg = self.dbg .. "\t"
 			s = s .. tostring(v) .. ",\n"
@@ -290,7 +292,7 @@ function node:new_struct(decls, name)
 		return s .. self.dbg .. "\t])"
 	end,
 	_src = function(self)
-		local s = (tostring(self.name) or "") .. self.ws_after_struct .. self.ws_after_name .. "{"
+		local s = (tostring(self.name) or "") .. self.ws_after_type .. self.ws_after_name .. "{"
 		if #self.value > 0 then
 			for i, v in ipairs(self.value) do
 				s = s .. v:src()
@@ -559,20 +561,20 @@ function statement(src, ctx, dbg)
 	local rnode, rnode2
 
 	if enbf_debug then print(dbg .. "statement", ctx.token, ctx.token_value) end
-	if ctx.token == tokens.id and (identifiers[ctx.token_value.name].class == classes._type or identifiers[ctx.token_value.name].class == classes.type_mod or ctx.token_value:has_mod("struct")) then -- объявление переменной или функции
+	if ctx.token == tokens.id and (identifiers[ctx.token_value.name].class == classes._type or identifiers[ctx.token_value.name].class == classes.type_mod or is_token_compound(ctx.token_value)) then -- объявление переменной или функции
 		local type_id
 		if enbf_debug then print(dbg .. "\tvariable or function declaration") end
 
-		if ctx.token == tokens.id and ctx.token_value:has_mod("struct") then
-			local struct_token = ctx.token_value
+		if ctx.token == tokens.id and is_token_compound(ctx.token_value) then
+			local name_token = ctx.token_value
 			ctx = next_token(src, ctx)
 			if ctx.token == '{' then
-				local ws_after_struct = ctx.ws
-				type_id, ctx = struct_decl(src, ctx, dbg .. "\t")
-				type_id.ws_after_struct = ws_after_struct
-				type_id.name = struct_token
+				local ws_after_type = ctx.ws
+				type_id, ctx = compound_decl(src, ctx, dbg .. "\t")
+				type_id.ws_after_type = ws_after_type
+				type_id.name = name_token
 			else
-				type_id = struct_token
+				type_id = name_token
 				ctx = next_token(src, ctx)
 			end
 		end
@@ -598,7 +600,6 @@ function statement(src, ctx, dbg)
 
 		local vars = {}
 		while ctx.token == tokens.id do
-			print("CUR", ctx.token, ctx.token_value)
 			local decl = node:new_var(ctx.token_value)
 			decl.ws_before = ctx.ws
 
@@ -622,11 +623,9 @@ function statement(src, ctx, dbg)
 			end
 			ctx = next_token(src, ctx)
 		end
-		print("ENDED ON TOKEN", ctx.token, ctx.token_value)
 
 		if ctx.token == '(' then -- объявление функции
 			rnode, ctx = func_decl(src, ctx, dbg .. "\t")
-			print("DECL ", vars[1])
 			-- полагаем что это var (TODO?)
 			rnode.ws_after_return_type = vars[1].ws_before
 			rnode.id = vars[1].value
@@ -894,15 +893,15 @@ function func_decl(src, ctx, dbg)
 	return node:new_func(params, body), ctx
 end
 
-function struct_decl(src, ctx, dbg)
+function compound_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. line .. ": unexpected EOF of struct declaration")
+		print("line " .. line .. ": unexpected EOF of compound declaration")
 		os.exit(1)
 	end
 
-	if enbf_debug then print(dbg .. "struct decl", ctx.token, ctx.token_value) end
+	if enbf_debug then print(dbg .. "compound decl", ctx.token, ctx.token_value) end
 
 	local decls = {}
 	ctx = next_token(src, ctx) -- пропуск '{'
@@ -915,7 +914,7 @@ function struct_decl(src, ctx, dbg)
 		ctx = next_token(src, ctx)
 	end
 	if not ctx.token then
-		print("line " .. line .. ": unexpected EOF of struct declaration")
+		print("line " .. line .. ": unexpected EOF of compound declaration")
 		os.exit(1)
 	end
 
@@ -925,7 +924,7 @@ function struct_decl(src, ctx, dbg)
 
 	ctx = next_token(src, ctx) -- пропуск '}'
 
-	return node:new_struct(decls), ctx
+	return node:new_compound(decls), ctx
 end
 
 

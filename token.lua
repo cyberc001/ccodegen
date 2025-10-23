@@ -84,6 +84,8 @@ end
 line = 1
 identifiers = {
 	struct = { class = classes.type_mod },
+	union = { class = classes.type_mod },
+
 	const = { class = classes.type_mod },
 	short = { class = classes.type_mod },
 	long = { class = classes.type_mod },
@@ -98,6 +100,12 @@ identifiers["if"] = { class = classes.keyword }
 identifiers["else"] = { class = classes.keyword }
 identifiers["while"] = { class = classes.keyword }
 identifiers["return"] = { class = classes.keyword }
+
+function is_token_compound(token_value)
+	return token_value:has_mod("struct") or token_value:has_mod("union")
+end
+
+
 
 function next_char(src, i)
 	return i + 1, src:sub(i, i), string.byte(src:sub(i, i))
@@ -155,12 +163,10 @@ function next_token(src, ctx)
 				end
 				table.insert(mods, id_name)
 				table.insert(mods_ws, cur_ws)
-				print("inserted ws '" .. cur_ws .. "'")
 			until identifiers[id_name].class ~= classes.type_mod
 
 			mods[#mods] = nil
 
-			print("token end", id_name)
 			return new_token_ctx(i - 1, ws, tokens.id, id:new({name = id_name, mods = mods, mods_ws = mods_ws}))
 		elseif is_number(c_code) then -- распарсить число
 			local ch0 = string.byte('0')

@@ -1,8 +1,5 @@
-const  char d, e = 33;
+union a
 
-struct  a 
-{
-
-	int a , b= 3, c = 4, e ;
-	char c =  d ;
-};
+	{
+	int* d = 3;
+} fat = 3;
