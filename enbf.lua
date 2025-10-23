@@ -448,8 +448,8 @@ function expression(level, src, ctx, dbg)
 			local cast_type = ctx.token_value
 			ctx = next_token(src, ctx)
 			while ctx.token == tokens.mul do -- пропуск указателей
+				table.insert(cast_type.pointers_ws, ctx.ws)
 				ctx = next_token(src, ctx)
-				cast_type.pointers = cast_type.pointers + 1
 			end
 
 			if ctx.token ~= ')' then
@@ -583,8 +583,8 @@ function statement(src, ctx, dbg)
 		end
 
 		while ctx.token == tokens.mul do -- пропуск указателей
+			table.insert(type_id.pointers_ws, ctx.ws)
 			ctx = next_token(src, ctx)
-			type_id.pointers = type_id.pointers + 1
 		end
 
 		if ctx.token ~= tokens.id then
@@ -833,8 +833,8 @@ function func_params(src, ctx, dbg)
 
 		ctx = next_token(src, ctx)
 		while ctx.token == tokens.mul do -- пропуск указателей
+			table.insert(type_id.pointers_ws, ctx.ws)
 			ctx = next_token(src, ctx)
-			type_id.pointers = type_id.pointers + 1
 		end
 
 		if ctx.token ~= tokens.id then

@@ -55,7 +55,7 @@ function id:new(o)
 	o = o or {}
 	o.mods = o.mods or {}
 	o.mods_ws = o.mods_ws or {}
-	o.pointers = o.pointers or 0
+	o.pointers_ws = o.pointers_ws or {}
 	setmetatable(o, self)
 	self.__index = self
 	return o
@@ -75,8 +75,8 @@ function id:__tostring()
 	end
 	s = s .. self.mods_ws[#self.mods_ws]
 	if self.name then s = s .. self.name end
-	for i = 1, self.pointers do
-		s = s .. "*"
+	for _, v in ipairs(self.pointers_ws) do
+		s = s .. v .. "*"
 	end
 	return s
 end
