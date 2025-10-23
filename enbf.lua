@@ -491,7 +491,7 @@ function expression(level, src, ctx, dbg)
 		end
 	elseif ctx.token == '(' then
 		ctx = next_token(src, ctx)
-		if ctx.token == tokens.id and (is_token_compound(ctx.token_value) or (identifiers[ctx.token_value.name].class == classes._type or identifiers[ctx.token_value.name].class == classes.type_mod)) then -- приведение типов
+		if ctx.token == tokens.id and is_id_token_a_type(ctx.token_value) then -- приведение типов
 			local cast_type = ctx.token_value
 			ctx = next_token(src, ctx)
 			while ctx.token == tokens.mul do -- пропуск указателей
@@ -626,11 +626,11 @@ function statement(src, ctx, dbg)
 	local rnode, rnode2
 
 	if enbf_debug then print(dbg .. "statement", ctx.token, ctx.token_value) end
-	if ctx.token == tokens.id and (identifiers[ctx.token_value.name].class == classes._type or identifiers[ctx.token_value.name].class == classes.type_mod or is_token_compound(ctx.token_value)) then -- объявление переменной или функции
+	if ctx.token == tokens.id and is_id_token_a_type(ctx.token_value) then -- объявление переменной или функции
 		local type_id
 		if enbf_debug then print(dbg .. "\tvariable or function declaration") end
 
-		if ctx.token == tokens.id and is_token_compound(ctx.token_value) then
+		if ctx.token == tokens.id and is_id_token_compound(ctx.token_value) then
 			local name_token = ctx.token_value
 			ctx = next_token(src, ctx)
 			if ctx.token == '{' then
@@ -640,7 +640,6 @@ function statement(src, ctx, dbg)
 				type_id.name = name_token
 			else
 				type_id = name_token
-				--ctx = next_token(src, ctx) FIXME
 			end
 		end
 
@@ -664,8 +663,10 @@ function statement(src, ctx, dbg)
 		end
 
 		local vars = {}
+		print("TYPE", type_id)
 		while ctx.token == tokens.id do
 			local decl = node:new_var(ctx.token_value)
+			print("DECL", ctx.token_value)
 			decl.ws_before = ctx.ws
 
 			ctx = next_token(src, ctx)
@@ -702,6 +703,7 @@ function statement(src, ctx, dbg)
 				local assign_op = node:new_bin_op(tokens.assign, decl, rnode)
 				table.insert(vars, assign_op)
 			else
+				print("INSERTING", decl)
 				table.insert(vars, decl)
 			end
 
@@ -721,7 +723,8 @@ function statement(src, ctx, dbg)
 		end
 		-- объявление переменной (переменных)
 		if ctx.token ~= ';' then
-			print("line " .. line .. ": expected ';' after variable declaration")
+			print("TOKEN VALUE", ctx.token_value)
+			print("line " .. line .. ": expected ';' after variable declaration, got " .. token_to_str(ctx.token))
 			os.exit(1)
 		end
 		if #vars > 0 then
@@ -985,8 +988,8 @@ function func_params(src, ctx, dbg)
 			print("line " .. line .. ": expected a type identifier")
 			os.exit(1)
 		end
-		if not is_token_compound(ctx.token_value) and (identifiers[ctx.token_value.name].class ~= classes._type and identifiers[ctx.token_value.name].class ~= classes.type_mod) then
-			print("line " .. line .. ": identifier is not a type")
+		if not is_id_token_a_type(ctx.token_value) then
+			print("line " .. line .. ": identifier '" .. tostring(ctx.token_value) .. "' is not a type")
 			os.exit(1)
 		end
 		local ws_before_type = ctx.ws

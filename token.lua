@@ -88,6 +88,9 @@ identifiers = {
 	const = { class = classes.type_mod },
 	short = { class = classes.type_mod },
 	long = { class = classes.type_mod },
+	unsigned = { class = classes.type_mod },
+	signed = { class = classes.type_mod },
+
 	void = { class = classes._type },
 	int = { class = classes._type },
 	char = { class = classes._type },
@@ -100,8 +103,17 @@ identifiers["else"] = { class = classes.keyword }
 identifiers["while"] = { class = classes.keyword }
 identifiers["return"] = { class = classes.keyword }
 
-function is_token_compound(token_value)
+function is_id_token_compound(token_value)
 	return token_value:has_mod("struct") or token_value:has_mod("union")
+end
+function is_id_token_a_type(token_value)
+	if token_value:has_mod("unsigned") or token_value:has_mod("signed") then
+		return true -- невяно указан тип int
+	end
+	if not token_value.name then
+		return false
+	end
+	return is_id_token_compound(token_value) or (identifiers[token_value.name] and identifiers[token_value.name].class == classes._type)
 end
 
 
@@ -137,7 +149,9 @@ function next_token(src, ctx)
 		elseif is_valid_id_char(c_code, true) then -- идентификатор
 			local mods = {}
 			local mods_ws = {}
+			local compound = false
 			local cur_ws
+			local id_name_beg_i
 			repeat
 				cur_ws = ""
 				while is_ws(c) do -- пропуск пробелов до следующего идентификатора
@@ -146,25 +160,33 @@ function next_token(src, ctx)
 				end
 
 				if not is_valid_id_char(c_code, true) then
-					id_name = nil
 					table.insert(mods, "") -- заглушка, чтобы строка mods[#mods] не стирала модификаторы, когда name отсутствует
 					table.insert(mods_ws, "")
 					break
 				end
 
-				local beg_i = i - 1
+				id_name_beg_i = i - 1
 				while is_valid_id_char(c_code) do
 					i, c, c_code = next_char(src, i)
 				end
-				id_name = src:sub(beg_i, i - 2)
-				if not identifiers[id_name] then
-					identifiers[id_name] = {}
-				end
+				id_name = src:sub(id_name_beg_i, i - 2)
 				table.insert(mods, id_name)
 				table.insert(mods_ws, cur_ws)
-			until identifiers[id_name].class ~= classes.type_mod
+
+				if id_name == "struct" or id_name == "union" then
+					compound = true
+				end
+			until not identifiers[id_name] or identifiers[id_name].class ~= classes.type_mod
 
 			mods[#mods] = nil
+
+			if #mods > 0 and not identifiers[id_name] and not compound then -- неявно указанный тип перед именем переменной
+				print("fuck you", id_name, mods[1], compound)
+				i = id_name_beg_i + 1
+				id_name = nil
+			elseif not identifiers[id_name] then
+				identifiers[id_name] = {}
+			end
 
 			return new_token_ctx(i - 1, ws, tokens.id, id:new({name = id_name, mods = mods, mods_ws = mods_ws}))
 		elseif is_number(c_code) then -- распарсить число
