@@ -1,32 +1,66 @@
 tokens = {
 	num = 1, fun = 2, sys = 3, glo = 4, loc = 5, id = 6,
 	char = 7, str = 8,
-	assign = 15, cond = 16, lor = 17, land = 18, _or = 19, xor = 20, _and = 21, eq = 22, ne = 23, lt = 24, gt = 25, le = 26, ge = 27, shl = 28, shr = 29, add = 30, sub = 31, mul = 32, div = 33, mod = 34, lnot = 35, _not = 36, inc = 37, dec = 38, brack = 39
+
+	assign = 15,
+	cond = 16,
+	lor = 17,
+	land = 18,
+	_or = 19,
+	xor = 20,
+	_and = 21,
+	eq = 22, ne = 23,
+	lt = 24, gt = 25, le = 26, ge = 27,
+	shl = 28, shr = 29,
+	add = 30, sub = 31,
+	mul = 32, div = 33, mod = 34,
+	lnot = 35, _not = 36,
+	member = 37, member_ptr = 38, inc = 39, dec = 40, brack = 41
 }
+
+function is_token_binary_op(token)
+	return token == tokens.assign
+	or token >= tokens.lor and token <= tokens.member_ptr
+end
 
 function token_to_str(token)
 	if token == tokens.assign then return '=' end
+
 	if token == tokens.cond then return '?' end
+
 	if token == tokens.lor then return '||' end
+
 	if token == tokens.land then return '&&' end
+
 	if token == tokens._or then return '|' end
+
 	if token == tokens.xor then return '^' end
+
 	if token == tokens._and then return '&' end
+
 	if token == tokens.eq then return '==' end
 	if token == tokens.ne then return '!=' end
+
 	if token == tokens.lt then return '<' end
 	if token == tokens.gt then return '>' end
 	if token == tokens.le then return '<=' end
 	if token == tokens.ge then return '>=' end
+
 	if token == tokens.shl then return '<<' end
 	if token == tokens.shr then return '>>' end
+
 	if token == tokens.add then return '+' end
 	if token == tokens.sub then return '-' end
+
 	if token == tokens.mul then return '*' end
 	if token == tokens.div then return '/' end
 	if token == tokens.mod then return '%' end
+
 	if token == tokens.lnot then return '!' end
 	if token == tokens._not then return '~' end
+
+	if token == tokens.member then return '.' end
+	if token == tokens.member_ptr then return '->' end
 	if token == tokens.inc then return '++' end
 	if token == tokens.dec then return '--' end
 	if token == tokens.brack then return '[' end
@@ -71,7 +105,7 @@ end
 function id:__tostring()
 	s = ""
 	for i, v in ipairs(self.mods) do
-		s = s .. v .. self.mods_ws[i]
+		s = s .. self.mods_ws[i] .. v
 	end
 	s = s .. self.mods_ws[#self.mods_ws]
 	if self.name then s = s .. self.name end
@@ -148,12 +182,13 @@ function next_token(src, ctx)
 			end
 			ws = "\n"
 		elseif is_valid_id_char(c_code, true) then -- идентификатор
+			local prev_i
 			local mods = {}
 			local mods_ws = {}
 			local compound = false
 			local cur_ws
-			local id_name_beg_i
 			repeat
+				prev_i = i
 				cur_ws = ""
 				while is_ws(c) do -- пропуск пробелов до следующего идентификатора
 					cur_ws = cur_ws .. c
@@ -166,11 +201,11 @@ function next_token(src, ctx)
 					break
 				end
 
-				id_name_beg_i = i - 1
+				local beg_i = i - 1
 				while is_valid_id_char(c_code) do
 					i, c, c_code = next_char(src, i)
 				end
-				id_name = src:sub(id_name_beg_i, i - 2)
+				id_name = src:sub(beg_i, i - 2)
 				table.insert(mods, id_name)
 				table.insert(mods_ws, cur_ws)
 
@@ -181,11 +216,15 @@ function next_token(src, ctx)
 
 			mods[#mods] = nil
 
-			if #mods > 0 and not identifiers[id_name] and not compound then -- неявно указанный тип перед именем переменной
-				i = id_name_beg_i + 1
+			-- два условия для неявно указанного тип переменных
+			if #mods > 0 and not identifiers[id_name] and not compound then -- тип, за которым следует имя (объявление переменной)
+				mods_ws[#mods_ws] = ""
+				i = prev_i
 				id_name = nil
 			end
-
+			if identifiers[id_name] and identifiers[id_name].class == classes.type_mod then -- тип без следующего за ним имени (возвращаемый тип функции, каст)
+				id_name = nil
+			end
 
 			return new_token_ctx(i - 1, ws, tokens.id, id:new({name = id_name, mods = mods, mods_ws = mods_ws}))
 		elseif is_number(c_code) then -- распарсить число
@@ -259,6 +298,9 @@ function next_token(src, ctx)
 			if next_c == '-' then
 				i, _, _ = next_char(src, i)
 				return new_token_ctx(i, ws, tokens.dec)
+			elseif next_c == '>' then
+				i, _, _ = next_char(src, i)
+				return new_token_ctx(i, ws, tokens.member_ptr)
 			else
 				return new_token_ctx(i, ws, tokens.sub)
 			end
@@ -318,6 +360,8 @@ function next_token(src, ctx)
 			return new_token_ctx(i, ws, tokens.cond)
 		elseif c == '~' then
 			return new_token_ctx(i, ws, tokens._not)
+		elseif c == '.' then
+			return new_token_ctx(i, ws, tokens.member)
 		elseif c == '[' then
 			return new_token_ctx(i, ws, tokens.brack)
 		else

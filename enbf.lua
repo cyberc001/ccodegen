@@ -453,10 +453,14 @@ function expression(level, src, ctx, dbg)
 		ctx = next_token(src, ctx)
 		unit_node = node:new({_type = nodes.str, value = val})
 	elseif ctx.token == tokens.id then
-		local id = ctx.token_value.name
+		local id = ctx.token_value
 		ctx = next_token(src, ctx)
 
 		if ctx.token == '(' then -- вызов функции
+			if #id.mods > 0 then
+				print("line " .. line .. ": invalid function identifier (has modifiers)")
+				os.exit(1)
+			end
 			local args = {}
 			local ws_after_name = ctx.ws
 			ctx = next_token(src, ctx) -- пропуск '('
@@ -482,12 +486,13 @@ function expression(level, src, ctx, dbg)
 
 			ctx = next_token(src, ctx) -- пропуск закрывающей скобки ')'
 
-			unit_node = node:new_call(id, args)
+			unit_node = node:new_call(id.name, args)
 			unit_node.ws_before_params = ws_before_params
 			unit_node.ws_after_name = ws_after_name
 			unit_node.arg_ws_after = arg_ws_after
 		else
-			unit_node = node:new_var(id)
+			-- TODO надо проверять, что ID не имеет модификаторов, но тогда sizeof нужно обрабатывать отдельно
+			unit_node = node:new_var(tostring(id))
 		end
 	elseif ctx.token == '(' then
 		ctx = next_token(src, ctx)
@@ -583,7 +588,7 @@ function expression(level, src, ctx, dbg)
 			ctx = next_token(src, ctx) -- пропуск ':'
 			rnode2, ctx = expression(tokens.cond, src, ctx, dbg .. "\t")
 			unit_node = node:new_cond(unit_node, rnode, rnode2)
-		elseif ctx.token >= tokens.lor and ctx.token <= tokens.mod then
+		elseif is_token_binary_op(ctx.token) then
 			unit_node.ws_after = unit_node.ws_after .. ctx.ws
 			local op = ctx.token
 			ctx = next_token(src, ctx)
@@ -672,7 +677,13 @@ function statement(src, ctx, dbg)
 			local decl = node:new_var(ctx.token_value)
 			decl.ws_before = ctx.ws
 
+			print("DECL", decl, ctx.token, "WS_BEFORE '" .. decl.ws_before .. "'")
 			ctx = next_token(src, ctx)
+			print("AFTER NEXT TOKEN", ctx.token)
+			while ctx.token == tokens.mul do -- пропуск указателей
+				table.insert(type_id.pointers_ws, ctx.ws)
+				ctx = next_token(src, ctx)
+			end
 			decl.ws_after = ctx.ws
 
 			if ctx.token == '[' then
