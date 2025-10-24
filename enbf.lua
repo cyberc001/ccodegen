@@ -10,7 +10,7 @@ nodes = {
 	un_op = 30, bin_op = 31, cond = 32, index = 33,
 	parantheses = 40, braces = 41, comma = 42,
 
-	_if = 50, _while = 51,
+	_if = 50, _while = 51, _for = 52,
 
 	compound = 60
 }
@@ -225,7 +225,7 @@ function node:new_for(begin, cond, iter, body)
 				s = s .. ";"
 			end
 		end
-		return s .. ")" .. self.ws_before_body .. self.value:src()
+		return s .. ")" .. self.ws_before_body .. (self.value and self.value:src() or ";")
 	end,
 	get_children = function(self)
 		return {self.cond, self.value}
