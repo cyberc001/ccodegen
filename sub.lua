@@ -15,7 +15,6 @@ function do_c_subs(src)
 
 				local script_env = {}
 				setmetatable(script_env, {__index = _ENV})
-				script_env.node = node
 
 				local script, err = load(src:sub(lua_start, i - 1), nil, nil, script_env)
 				if not script then

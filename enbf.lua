@@ -424,9 +424,7 @@ function node:new_func(params, body, id, return_type)
 	end,
 	get_children = function(self)
 		local children = {}
-		for _, v in ipairs(self.params) do
-			table.insert(children, v)
-		end
+		table.insert(children, self.params)
 		table.insert(children, self.value)
 		return children
 	end

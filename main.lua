@@ -1,5 +1,6 @@
 require "enbf"
 require "sub"
+require "utils"
 local cli = require "cliargs"
 
 cli:splat("SCRIPT_FILES", "Lua scripts that can parse and modify syntax tree", nil, 999)
@@ -13,21 +14,24 @@ end
 local src = io.read("*a")
 src = do_c_subs(src)
 
-local node
+local global_node
 local ctx = new_token_ctx(1)
 ctx = next_token(src, ctx)
 
 local global_decls = {}
 while true do
-	node, ctx = global_decl(src, ctx)
-	table.insert(global_decls, node)
+	global_node, ctx = global_decl(src, ctx)
+	table.insert(global_decls, global_node)
 	if ctx.i == nil then break end
 	ctx = next_token(src, ctx)
 	if ctx.i == nil then break end
 end
 
 for _, fpath in ipairs(args.SCRIPT_FILES) do
-	local script, err = loadfile(fpath)
+	local script_env = {}
+	setmetatable(script_env, {__index = _ENV})
+
+	local script, err = loadfile(fpath, nil, script_env)
 	if not script then
 		print("Cannot load Lua script '" .. fpath .. "':\n\t" .. err)
 	end
