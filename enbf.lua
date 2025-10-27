@@ -305,6 +305,10 @@ function node:new_comma(value)
 	})
 end
 function node:new_decl(var_type, vars)
+	if vars.value then -- один узел вместо таблицы
+		vars = {vars}
+	end
+
 	return node:new({_type = nodes.decl, var_type = var_type, value = vars,
 	print = function(self)
 		local s = "(decl [" .. tostring(self.var_type) .. "]\n"

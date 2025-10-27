@@ -12,21 +12,27 @@ function do_c_subs(src)
 		if is_lua then
 			if src:len() - i > 4 and src:sub(i, i + 3) == "$$*/" then
 				is_lua = false
-				local script, err = load(src:sub(lua_start, i - 1))
+
+				local script_env = {}
+				setmetatable(script_env, {__index = _ENV})
+				script_env.node = node
+
+				local script, err = load(src:sub(lua_start, i - 1), nil, nil, script_env)
 				if not script then
 					print("line " .. tostring(line) .. ": Lua script error\n\t" .. err)
 					os.exit(1)
 				end
 
 				local res = script()
-				if res ~= nil then
-					if type(res) == "table" then
-						print("line " .. tostring(line) .. ": Lua tables are not supported")
+				if type(res) == "table" then
+					if not res.src then
+						print("line " .. tostring(line) .. ": table is not a node")
 						os.exit(1)
 					end
-
-					table.insert(subs, {str = tostring(res), beg = lua_start - 4, _end = i + 4})
+					res = res:src()
 				end
+
+				table.insert(subs, {str = res and tostring(res) or "", beg = lua_start - 4, _end = i + 4})
 			end
 		else
 			if src:len() - i > 4 and src:sub(i, i + 3) == "/*$$" then

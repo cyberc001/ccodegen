@@ -86,10 +86,25 @@ end
 
 id = {}
 function id:new(o)
-	o = o or {}
-	o.mods = o.mods or {}
-	o.mods_ws = o.mods_ws or {}
-	o.pointers_ws = o.pointers_ws or {}
+	if type(o) == "string" then
+		local src = o .. ";"
+		local ctx = next_token(src, new_token_ctx(1, "", nil, nil))
+		if ctx.token ~= tokens.id then
+			print("Cannot initialize id from string '" .. o .. "'")
+			os.exit(1)
+		end
+		o = ctx.token_value
+		ctx = next_token(src, ctx)
+		while ctx.token == tokens.mul do -- пропуск указателей
+			table.insert(o.pointers_ws, ctx.ws)
+			ctx = next_token(src, ctx)
+		end
+	else
+		o = o or {}
+		o.mods = o.mods or {}
+		o.mods_ws = o.mods_ws or {}
+		o.pointers_ws = o.pointers_ws or {}
+	end
 	setmetatable(o, self)
 	self.__index = self
 	return o
