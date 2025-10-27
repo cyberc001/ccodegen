@@ -223,6 +223,7 @@ function next_token(src, ctx)
 				id_name = nil
 			end
 			if identifiers[id_name] and identifiers[id_name].class == classes.type_mod then -- тип без следующего за ним имени (возвращаемый тип функции, каст)
+				i = prev_i
 				id_name = nil
 			end
 

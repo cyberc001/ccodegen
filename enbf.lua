@@ -497,7 +497,13 @@ function expression(level, src, ctx, dbg)
 			unit_node.arg_ws_after = arg_ws_after
 		else
 			-- TODO надо проверять, что ID не имеет модификаторов, но тогда sizeof нужно обрабатывать отдельно
-			unit_node = node:new_var(tostring(id))
+			if is_id_token_a_type(id) then
+				while ctx.token == tokens.mul do -- пропуск указателей
+					table.insert(id.pointers_ws, ctx.ws)
+					ctx = next_token(src, ctx)
+				end
+			end
+			unit_node = node:new_var(id)
 		end
 	elseif ctx.token == '(' then
 		ctx = next_token(src, ctx)
@@ -600,6 +606,10 @@ function expression(level, src, ctx, dbg)
 			local ws_before_op2 = ctx.ws
 
 			rnode, ctx = expression(op + 1, src, ctx, dbg .. "\t")
+			if not rnode then
+				print("line " .. line .. ": expected a second operand for binary operator '" .. token_to_str(op) .."'")
+				os.exit(1)
+			end
 			rnode.ws_before = rnode.ws_before .. ws_before_op2
 			unit_node = node:new_bin_op(op, unit_node, rnode)
 		elseif ctx.token == tokens.inc or ctx.token == tokens.dec then
@@ -682,9 +692,7 @@ function statement(src, ctx, dbg)
 			local decl = node:new_var(ctx.token_value)
 			decl.ws_before = ctx.ws
 
-			print("DECL", decl, ctx.token, "WS_BEFORE '" .. decl.ws_before .. "'")
 			ctx = next_token(src, ctx)
-			print("AFTER NEXT TOKEN", ctx.token)
 			while ctx.token == tokens.mul do -- пропуск указателей
 				table.insert(type_id.pointers_ws, ctx.ws)
 				ctx = next_token(src, ctx)
