@@ -150,10 +150,13 @@ function node:new_index(x, i)
 	return node:new({_type = nodes.index, value = {x, i}, ws_before_brackets = "", ws_before_closing_bracket = "",
 	print = function(self)
 		self.value[1].dbg = self.dbg .. "\t"
+		local value2_prefix = ""
 		if self.value[2] then
 			self.value[2].dbg = self.dbg .. "\t"
+		else
+			value2_prefix = self.dbg .. "\t"
 		end
-		return "(index, values\n" .. tostring(self.value[1]) .. ",\n\t" .. self.dbg .. tostring(self.value[2]) .. "\n" .. self.dbg .. ")"
+		return "(index, values\n" .. tostring(self.value[1]) .. ",\n\t" .. value2_prefix .. tostring(self.value[2]) .. "\n" .. self.dbg .. ")"
 	end,
 	_src = function(self)
 		return self.value[1]:src() .. self.ws_before_brackets .. "[" .. (self.value[2] and self.value[2]:src() or self.ws_before_brackets) .. self.ws_before_closing_bracket .. "]"
@@ -202,7 +205,9 @@ function node:new_for(begin, cond, iter, body)
 		if self.begin then self.begin.dbg = self.dbg .. "\t" end
 		if self.cond then self.cond.dbg = self.dbg .. "\t" end
 		if self.iter then self.iter.dbg = self.dbg .. "\t" end
-		self.value.dbg = self.dbg .. "\t"
+		if self.value then
+			self.value.dbg = self.dbg .. "\t"
+		end
 		return "(for\n"
 			.. self.dbg .. "\tbegin" .. (self.begin and "\n" .. tostring(self.begin) or " nil") .. ",\n"
 			.. self.dbg .. "\tcond" .. (self.cond and "\n" .. tostring(self.cond) or " nil") .. ",\n"
