@@ -14,6 +14,7 @@ end
 local src = io.read("*a")
 src = do_c_subs(src)
 
+enbf_debug = true
 local global_node
 local ctx = new_token_ctx(1)
 ctx = next_token(src, ctx)

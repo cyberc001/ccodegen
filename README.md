@@ -2,6 +2,7 @@
 
 ```lua
 luarocks install lua_cliargs
+luarocks install luaunit
 ```
 
 ## Использование

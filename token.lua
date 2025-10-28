@@ -1,29 +1,43 @@
 tokens = {
-	num = 1, fun = 2, sys = 3, glo = 4, loc = 5, id = 6,
-	char = 7, str = 8,
+	num = 1, num_hex = 2, num_oct = 3,
+	fun = 10, sys = 11, glo = 12, loc = 13, id = 14,
+	char = 15, str = 16,
 
-	assign = 15,
-	cond = 16,
-	lor = 17,
-	land = 18,
-	_or = 19,
-	xor = 20,
-	_and = 21,
-	eq = 22, ne = 23,
-	lt = 24, gt = 25, le = 26, ge = 27,
-	shl = 28, shr = 29,
-	add = 30, sub = 31,
-	mul = 32, div = 33, mod = 34,
-	lnot = 35, _not = 36,
-	member = 37, member_ptr = 38, inc = 39, dec = 40, brack = 41
+	assign = 20, bor_assign = 21, xor_assign = 22, band_assign = 23, shr_assign = 24, shl_assign = 25, mod_assign = 26, div_assign = 27, mul_assign = 28, sub_assign = 29, add_assign = 30,
+	cond = 40,
+	lor = 50,
+	land = 51,
+	_or = 52,
+	xor = 53,
+	_and = 54,
+	eq = 55, ne = 56,
+	lt = 57, gt = 58, le = 59, ge = 60,
+	shl = 70, shr = 71,
+	add = 80, sub = 81,
+	mul = 82, div = 83, mod = 84,
+	lnot = 90, _not = 91,
+	member = 100, member_ptr = 101, inc = 102, dec = 103, brack = 104
 }
 
+function is_token_num(token)
+	return type(token) == "number" and token >= tokens.num and token <= tokens.num_oct
+end
 function is_token_binary_op(token)
-	return token == tokens.assign
-	or token >= tokens.lor and token <= tokens.member_ptr
+	return token >= tokens.lor and token <= tokens.member_ptr
+	or token >= tokens.assign and token <= tokens.add_assign
 end
 
 function token_to_str(token)
+	if token == tokens.bor_assign then return '|=' end
+	if token == tokens.xor_assign then return '^=' end
+	if token == tokens.band_assign then return '&=' end
+	if token == tokens.shr_assign then return '>>=' end
+	if token == tokens.shl_assign then return '<<=' end
+	if token == tokens.mod_assign then return '%=' end
+	if token == tokens.div_assign then return '/=' end
+	if token == tokens.mul_assign then return '*=' end
+	if token == tokens.sub_assign then return '-=' end
+	if token == tokens.add_assign then return '+=' end
 	if token == tokens.assign then return '=' end
 
 	if token == tokens.cond then return '?' end
@@ -244,38 +258,45 @@ function next_token(src, ctx)
 
 			return new_token_ctx(i - 1, ws, tokens.id, id:new({name = id_name, mods = mods, mods_ws = mods_ws}))
 		elseif is_number(c_code) then -- распарсить число
+			local token_type
 			local ch0 = string.byte('0')
 			local val = c_code - ch0
+			_, next_c, next_c_code = next_char(src, i)
 
-			if val > 0 then -- десятичное число
+			if c_code == ch0 and next_c == 'x' or next_c == 'X' then -- шестнадцатиричное число
+				i, _, _ = next_char(src, i)
+				i, c, c_code = next_char(src, i)
+				while is_number(c_code) or (c_code >= string.byte('a') and c_code <= string.byte('f')) or (c_code >= string.byte('A') and c_code <= string.byte('F')) do
+					val = val * 16 + (c_code & 15) + (c_code >= string.byte('A') and 9 or 0)
+					i, c, c_code = next_char(src, i)
+				end
+				token_type = tokens.num_hex
+			elseif c_code == ch0 and is_number(next_c_code) then -- восьмеричное число
+				while c_code >= ch0 and c_code <= string.byte('7') do
+					val = val * 8 + (c_code - ch0)
+					i, c, c_code = next_char(src, i)
+				end
+				token_type = tokens.num_oct
+			elseif val >= 0 then -- десятичное число
 				i, c, c_code = next_char(src, i)
 				while is_number(c_code) do
 					val = val * 10 + (c_code - ch0)
 					i, c, c_code = next_char(src, i)
 				end
-			else
-				if c == 'x' or c == 'X' then -- шестнадцатиричное число
-					i, c, c_code = next_char(src, i)
-					while is_number(c_code) or (c_code >= string.byte('a') and c_code <= string.byte('f')) or (c_code >= string.byte('A') and c_code <= string.byte('F')) do
-						val = val * 16 + (c_code & 15) + (c_code >= string.byte('A') and 9 or 0)
-						i, c, c_code = next_char(src, i)
-					end
-				else -- восьмеричное число
-					while c_code >= ch0 and c_code <= string.byte('7') do
-						val = val * 8 + (c_code - ch0)
-						i, c, c_code = next_char(src, i)
-					end
-				end
+				token_type = tokens.num
 			end
-
-			return new_token_ctx(i - 1, ws, tokens.num, val)
+			return new_token_ctx(i - 1, ws, token_type, val)
 		elseif c == '/' then
 			_, next_c, next_c_code = next_char(src, i)
 			if next_c == '/' then -- пропуск комментариев
 				while i <= src:len() and c ~= '\n' do
 					i, c, c_code = next_char(src, i)
 				end
+				line = line + 1
 				ws = "\n"
+			elseif next_c == '=' then
+				i, _, _ = next_char(src, i)
+				return new_token_ctx(i, ws, tokens.div_assign)
 			else -- оператор деления
 				return new_token_ctx(i, ws, tokens.div)
 			end
@@ -306,6 +327,9 @@ function next_token(src, ctx)
 			if next_c == '+' then
 				i, _, _ = next_char(src, i)
 				return new_token_ctx(i, ws, tokens.inc)
+			elseif next_c == '=' then
+				i, _, _ = next_char(src, i)
+				return new_token_ctx(i, ws, tokens.add_assign)
 			else
 				return new_token_ctx(i, ws, tokens.add)
 			end
@@ -314,6 +338,9 @@ function next_token(src, ctx)
 			if next_c == '-' then
 				i, _, _ = next_char(src, i)
 				return new_token_ctx(i, ws, tokens.dec)
+			elseif next_c == '=' then
+				i, _, _ = next_char(src, i)
+				return new_token_ctx(i, ws, tokens.sub_assign)
 			elseif next_c == '>' then
 				i, _, _ = next_char(src, i)
 				return new_token_ctx(i, ws, tokens.member_ptr)
@@ -335,7 +362,13 @@ function next_token(src, ctx)
 				return new_token_ctx(i, ws, tokens.le)
 			elseif next_c == '<' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.shl)
+				_, next_c, _ = next_char(src, i)
+				if next_c == '=' then
+					i, _, _ = next_char(src, i)
+					return new_token_ctx(i, ws, tokens.shl_assign)
+				else
+					return new_token_ctx(i, ws, tokens.shl)
+				end
 			else
 				return new_token_ctx(i, ws, tokens.lt)
 			end
@@ -344,9 +377,15 @@ function next_token(src, ctx)
 			if next_c == '=' then
 				i, _, _ = next_char(src, i)
 				return new_token_ctx(i, ws, tokens.ge)
-			elseif next_c == '<' then
+			elseif next_c == '>' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.shr)
+				_, next_c, _ = next_char(src, i)
+				if next_c == '=' then
+					i, _, _ = next_char(src, i)
+					return new_token_ctx(i, ws, tokens.shr_assign)
+				else
+					return new_token_ctx(i, ws, tokens.shr)
+				end
 			else
 				return new_token_ctx(i, ws, tokens.gt)
 			end
@@ -355,6 +394,9 @@ function next_token(src, ctx)
 			if next_c == '|' then
 				i, _, _ = next_char(src, i)
 				return new_token_ctx(i, ws, tokens.lor)
+			elseif next_c == '=' then
+				i, _, _ = next_char(src, i)
+				return new_token_ctx(i, ws, tokens.bor_assign)
 			else
 				return new_token_ctx(i, ws, tokens._or)
 			end
@@ -363,15 +405,36 @@ function next_token(src, ctx)
 			if next_c == '&' then
 				i, _, _ = next_char(src, i)
 				return new_token_ctx(i, ws, tokens.land)
+			elseif next_c == '=' then
+				i, _, _ = next_char(src, i)
+				return new_token_ctx(i, ws, tokens.band_assign)
 			else
 				return new_token_ctx(i, ws, tokens._and)
 			end
 		elseif c == '^' then
-			return new_token_ctx(i, ws, tokens.xor)
+			_, next_c, _ = next_char(src, i)
+			if next_c == '=' then
+				i, _, _ = next_char(src, i)
+				return new_token_ctx(i, ws, tokens.xor_assign)
+			else
+				return new_token_ctx(i, ws, tokens.xor)
+			end
 		elseif c == '%' then
-			return new_token_ctx(i, ws, tokens.mod)
+			_, next_c, _ = next_char(src, i)
+			if next_c == '=' then
+				i, _, _ = next_char(src, i)
+				return new_token_ctx(i, ws, tokens.mod_assign)
+			else
+				return new_token_ctx(i, ws, tokens.mod)
+			end
 		elseif c == '*' then
-			return new_token_ctx(i, ws, tokens.mul)
+			_, next_c, _ = next_char(src, i)
+			if next_c == '=' then
+				i, _, _ = next_char(src, i)
+				return new_token_ctx(i, ws, tokens.mul_assign)
+			else
+				return new_token_ctx(i, ws, tokens.mul)
+			end
 		elseif c == '?' then
 			return new_token_ctx(i, ws, tokens.cond)
 		elseif c == '~' then

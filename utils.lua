@@ -41,3 +41,19 @@ function node:get_children_ops(op, recursive)
 		return v.op == op
 	end, recursive)
 end
+
+
+function node:has_any_children_that(condition, recursive)
+	recursive = recursive or false
+
+	for _, v in ipairs(self:get_children()) do
+		if condition(v) then
+			return true
+		end
+
+		if recursive and v:has_any_children_that(condition, recurive) then
+			return true
+		end
+	end
+	return false
+end

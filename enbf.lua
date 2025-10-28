@@ -1,8 +1,6 @@
 require "token"
 require "os"
 
-local enbf_debug = true
-
 nodes = {
 	num = 1, str = 2, char = 3,
 	call = 10, var = 12, params = 13, decl = 14, func = 15, enum_decl = 16,
@@ -33,12 +31,31 @@ function node:__tostring()
 	else
 		dbg_append = self.dbg .. "\t"
 	end
-	return self.dbg .. (self.print and self:print() or "(generic node: type " .. self._type .. ", value [\n" .. dbg_append .. tostring(self.value) .. "\n" .. self.dbg .. "])")
+
+	local val = tostring(self.value)
+	if self._type == nodes.num then
+		if self.token == tokens.num_hex then
+			val = string.format("0x%x", val)
+		elseif self.token == tokens.num_oct then
+			val = string.format("0%o", val)
+		end
+	end
+
+	return self.dbg .. (self.print and self:print() or "(generic node: type " .. self._type .. ", value [\n" .. dbg_append .. val .. "\n" .. self.dbg .. "])")
 end
 
 -- возвращает исходный код узла
 function node:_src()
-	return tostring(self.value)
+	local val = tostring(self.value)
+	if self._type == nodes.num then
+		if self.token == tokens.num_hex then
+			val = string.format("0x%x", val)
+		elseif self.token == tokens.num_oct then
+			val = string.format("0%o", val)
+		end
+	end
+
+	return val
 end
 function node:src()
 	return self.ws_before .. self:_src() .. self.ws_after
@@ -447,10 +464,10 @@ function expression(level, src, ctx, dbg)
 	local unit_node
 
 	if enbf_debug then print(dbg .. "expression", ctx.token, ctx.token_value) end
-	if ctx.token == tokens.num then
+	if is_token_num(ctx.token) then
 		local val = ctx.token_value
+		unit_node = node:new({_type = nodes.num, value = val, token = ctx.token})
 		ctx = next_token(src, ctx)
-		unit_node = node:new({_type = nodes.num, value = val})
 	elseif ctx.token == tokens.char then
 		local val = ctx.token_value
 		ctx = next_token(src, ctx)
@@ -543,10 +560,10 @@ function expression(level, src, ctx, dbg)
 		unit_node = node:new_un_op(op, rnode)
 	elseif ctx.token == tokens.sub then -- отдельный случай с отрицательными числами
 		ctx = next_token(src, ctx)
-		if ctx.token == tokens.num then
+		if is_token_num(ctx.token) then
 			local val = ctx.token_value
+			unit_node = node:new({_type = nodes.num, value = -val, token = ctx.token})
 			ctx = next_token(src, ctx)
-			unit_node = node:new({_type = nodes.num, value = -val})
 		else
 			rnode, ctx = expression(tokens.inc, src, ctx, dbg .. "\t")
 			unit_node = node:new_un_op(tokens.sub, rnode)
@@ -593,13 +610,19 @@ function expression(level, src, ctx, dbg)
 			unit_node.ws_after = unit_node.ws_after .. ctx.ws
 			ctx = next_token(src, ctx) -- пропуск '?'
 
+			local ws_before_first_operand = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 			if ctx.token ~= ':' then
 				print("line " .. line .. ": expected ':' in conditional operator")
 				os.exit(1)
 			end
+			rnode.ws_before = ws_before_first_operand
+			rnode.ws_after = ctx.ws
+
 			ctx = next_token(src, ctx) -- пропуск ':'
+			local ws_before_second_operand = ctx.ws
 			rnode2, ctx = expression(tokens.cond, src, ctx, dbg .. "\t")
+			rnode2.ws_before = ws_before_second_operand
 			unit_node = node:new_cond(unit_node, rnode, rnode2)
 		elseif is_token_binary_op(ctx.token) then
 			unit_node.ws_after = unit_node.ws_after .. ctx.ws
@@ -974,11 +997,11 @@ function enum_decl(src, ctx, dbg)
 			var.ws_before = ws_before_var
 			var.ws_after = ctx.ws
 			ctx = next_token(src, ctx) -- пропуск '='
-			if ctx.token ~= tokens.num then
+			if not is_token_num(ctx.token) then
 				print("line " .. line .. ": enum should be initialized with a number")
 				os.exit(1)
 			end
-			local val = node:new({_type = nodes.num, value = ctx.token_value})
+			local val = node:new({_type = nodes.num, value = ctx.token_value, token = ctx.token})
 			val.ws_before = ctx.ws
 			table.insert(decls, node:new_bin_op(tokens.assign, var, val))
 			ctx = next_token(src, ctx)
