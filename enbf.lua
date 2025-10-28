@@ -453,7 +453,7 @@ function expression(level, src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. line .. ": unexpected EOF of expression")
+		print("line " .. ctx.line .. ": unexpected EOF of expression")
 		os.exit(1)
 	end
 
@@ -482,7 +482,7 @@ function expression(level, src, ctx, dbg)
 
 		if ctx.token == '(' then -- вызов функции
 			if #id.mods > 0 then
-				print("line " .. line .. ": invalid function identifier (has modifiers)")
+				print("line " .. ctx.line .. ": invalid function identifier (has modifiers)")
 				os.exit(1)
 			end
 			local args = {}
@@ -535,7 +535,7 @@ function expression(level, src, ctx, dbg)
 			end
 
 			if ctx.token ~= ')' then
-				print("line " .. line .. ": expected ')' in type cast")
+				print("line " .. ctx.line .. ": expected ')' in type cast")
 				os.exit(1)
 			end
 
@@ -546,7 +546,7 @@ function expression(level, src, ctx, dbg)
 			local ws_before_value = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 			if ctx.token ~= ')' then
-				print("line " .. line .. ": expected ')' in parantheses")
+				print("line " .. ctx.line .. ": expected ')' in parantheses")
 				os.exit(1)
 			end
 			ctx = next_token(src, ctx) -- пропуск ')'
@@ -579,7 +579,7 @@ function expression(level, src, ctx, dbg)
 			if ctx.token == ',' then
 				ctx = next_token(src, ctx)
 			elseif ctx.token ~= '}' then
-				print("line " .. line .. ": expected '}' to end a list-initializer")
+				print("line " .. ctx.line .. ": expected '}' to end a list-initializer")
 				os.exit(1)
 			end
 		end
@@ -613,7 +613,7 @@ function expression(level, src, ctx, dbg)
 			local ws_before_first_operand = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 			if ctx.token ~= ':' then
-				print("line " .. line .. ": expected ':' in conditional operator")
+				print("line " .. ctx.line .. ": expected ':' in conditional operator")
 				os.exit(1)
 			end
 			rnode.ws_before = ws_before_first_operand
@@ -625,6 +625,10 @@ function expression(level, src, ctx, dbg)
 			rnode2.ws_before = ws_before_second_operand
 			unit_node = node:new_cond(unit_node, rnode, rnode2)
 		elseif is_token_binary_op(ctx.token) then
+			if not unit_node then
+				print("line " .. ctx.line .. ": operator '" .. token_to_str(ctx.token) .. "' does not have 1st operand")
+				os.exit(1)
+			end
 			unit_node.ws_after = unit_node.ws_after .. ctx.ws
 			local op = ctx.token
 			ctx = next_token(src, ctx)
@@ -632,7 +636,7 @@ function expression(level, src, ctx, dbg)
 
 			rnode, ctx = expression(op + 1, src, ctx, dbg .. "\t")
 			if not rnode then
-				print("line " .. line .. ": expected a second operand for binary operator '" .. token_to_str(op) .."'")
+				print("line " .. ctx.line .. ": expected a second operand for binary operator '" .. token_to_str(op) .."'")
 				os.exit(1)
 			end
 			rnode.ws_before = rnode.ws_before .. ws_before_op2
@@ -645,7 +649,7 @@ function expression(level, src, ctx, dbg)
 			local ws_before_idx = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 			if ctx.token ~= ']' then
-				print("line " .. line .. ": expected ']' to close indexing operator")
+				print("line " .. ctx.line .. ": expected ']' to close indexing operator")
 				os.exit(1)
 			end
 			rnode.ws_after = rnode.ws_after .. ctx.ws
@@ -654,7 +658,7 @@ function expression(level, src, ctx, dbg)
 			rnode.ws_before = rnode.ws_before .. ws_before_idx
 			unit_node = node:new_index(unit_node, rnode)
 		else
-			print("line " .. line .. ": unexpected end of expression")
+			print("line " .. ctx.line .. ": unexpected end of expression")
 			os.exit(1)
 		end
 		if enbf_debug then print(dbg .. "going next") end
@@ -668,7 +672,7 @@ function statement(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. line .. ": unexpected EOF of statement")
+		print("line " .. ctx.line .. ": unexpected EOF of statement")
 		os.exit(1)
 	end
 
@@ -698,14 +702,18 @@ function statement(src, ctx, dbg)
 			ctx = next_token(src, ctx)
 		end
 
+		local insert_pointers_into = type_id._type == nodes.compound
+						and type_id.name.pointers_ws
+						or type_id.pointers_ws
+
 		while ctx.token == tokens.mul do -- пропуск указателей
-			table.insert(type_id.pointers_ws, ctx.ws)
+			table.insert(insert_pointers_into, ctx.ws)
 			ctx = next_token(src, ctx)
 		end
 
 		if ctx.token ~= tokens.id then
 			if ctx.token ~= ';' or not type_id then 
-				print("line " .. line .. ": expected variable or function name in global declaration, got " .. token_to_str(ctx.token))
+				print("line " .. ctx.line .. ": expected variable or function name in global declaration, got " .. token_to_str(ctx.token))
 				os.exit(1)
 			end
 			-- объявление структуры без имени переменной
@@ -729,7 +737,7 @@ function statement(src, ctx, dbg)
 				local ws_before_idx = ctx.ws
 				rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 				if ctx.token ~= ']' then
-					print("line " .. line .. ": expected ']' to close indexing operator")
+					print("line " .. ctx.line .. ": expected ']' to close indexing operator")
 					os.exit(1)
 				end
 
@@ -774,7 +782,7 @@ function statement(src, ctx, dbg)
 		end
 		-- объявление переменной (переменных)
 		if ctx.token ~= ';' then
-			print("line " .. line .. ": expected ';' after variable declaration, got " .. token_to_str(ctx.token))
+			print("line " .. ctx.line .. ": expected ';' after variable declaration, got " .. token_to_str(ctx.token))
 			os.exit(1)
 		end
 		if #vars > 0 then
@@ -791,14 +799,14 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx)
 		local ws_after_if = ctx.ws
 		if ctx.token ~= '(' then
-			print("line " .. line .. ": expected '(' after 'if'")
+			print("line " .. ctx.line .. ": expected '(' after 'if'")
 			os.exit(1)
 		end
 		ctx = next_token(src, ctx)
 		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 		local cond = rnode
 		if ctx.token ~= ')' then
-			print("line " .. line .. ": expected ')' after if condition")
+			print("line " .. ctx.line .. ": expected ')' after if condition")
 			os.exit(1)
 		end
 		ctx = next_token(src, ctx) -- пропуск ')'
@@ -821,7 +829,7 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx)
 		local ws_after_while = ctx.ws
 		if ctx.token ~= '(' then
-			print("line " .. line .. ": expected '(' after 'while'")
+			print("line " .. ctx.line .. ": expected '(' after 'while'")
 			os.exit(1)
 		end
 		ctx = next_token(src, ctx)
@@ -831,7 +839,7 @@ function statement(src, ctx, dbg)
 		rnode.ws_before = ws_before_cond
 		rnode.ws_after = ctx.ws
 		if ctx.token ~= ')' then
-			print("line " .. line .. ": expected ')' after while condition")
+			print("line " .. ctx.line .. ": expected ')' after while condition")
 			os.exit(1)
 		end
 		ctx = next_token(src, ctx) -- пропуск ')'
@@ -846,7 +854,7 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx)
 		local ws_after_for = ctx.ws
 		if ctx.token ~= '(' then
-			print("line " .. line .. ": expected '(' after 'for'")
+			print("line " .. ctx.line .. ": expected '(' after 'for'")
 			os.exit(1)
 		end
 
@@ -862,7 +870,7 @@ function statement(src, ctx, dbg)
 			table.insert(res.ws_for_nil_statements, ws_before)
 		end
 		if ctx.token ~= ';' and res.begin then
-			print("line " .. line .. ": expected ';' after beginning statement of 'for' loop, got " .. token_to_str(ctx.token))
+			print("line " .. ctx.line .. ": expected ';' after beginning statement of 'for' loop, got " .. token_to_str(ctx.token))
 			os.exit(1)
 		end
 
@@ -878,7 +886,7 @@ function statement(src, ctx, dbg)
 			table.insert(res.ws_for_nil_statements, ws_before)
 		end
 		if ctx.token ~= ';' and res.cond then
-			print("line " .. line .. ": expected ';' after conditional statement of 'for' loop, got " .. token_to_str(ctx.token))
+			print("line " .. ctx.line .. ": expected ';' after conditional statement of 'for' loop, got " .. token_to_str(ctx.token))
 			os.exit(1)
 		end
 
@@ -895,7 +903,7 @@ function statement(src, ctx, dbg)
 		end
 
 		if ctx.token ~= ')' then
-			print("line " .. line .. ": expected ')' after iterating statement of 'for' loop")
+			print("line " .. ctx.line .. ": expected ')' after iterating statement of 'for' loop")
 			os.exit(1)
 		end
 
@@ -921,7 +929,7 @@ function statement(src, ctx, dbg)
 				statements[#statements].ws_after = statements[#statements].ws_after .. ';'
 			end
 			if ctx.token == nil then
-				print("line " .. line .. ": curly brace '{' was never closed")
+				print("line " .. ctx.line .. ": curly brace '{' was never closed")
 				os.exit(1)
 			end
 			table.insert(statements, rnode)
@@ -946,7 +954,7 @@ function statement(src, ctx, dbg)
 		end
 		rnode = node:new_return(rnode)
 		if ctx.token ~= ';' then
-			print("line " .. line .. ": expected ';' after 'return', got " .. token_to_str(ctx.token))
+			print("line " .. ctx.line .. ": expected ';' after 'return', got " .. token_to_str(ctx.token))
 			os.exit(1)
 		end
 		rnode.ws_after = ctx.ws .. ';'
@@ -959,7 +967,7 @@ function statement(src, ctx, dbg)
 	else -- присваивание или вызов функции
 		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 		if ctx.token ~= ';' and ctx.token ~= ')' then
-			print("line " .. line .. ": expected ';' or ')' after statement, got " .. token_to_str(ctx.token))
+			print("line " .. ctx.line .. ": expected ';' or ')' after statement, got " .. token_to_str(ctx.token))
 			os.exit(1)
 		end
 		return rnode, ctx
@@ -970,7 +978,7 @@ function enum_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. line .. ": unexpected EOF of enum declaration")
+		print("line " .. ctx.line .. ": unexpected EOF of enum declaration")
 		os.exit(1)
 	end
 
@@ -981,12 +989,12 @@ function enum_decl(src, ctx, dbg)
 	if enbf_debug then print(dbg .. "enum, decl", ctx.token, ctx.token_value) end
 	while ctx.token ~= '}' do
 		if ctx.token ~= tokens.id then
-			print("line " .. line .. ": expected an identifier for enum declaration")
+			print("line " .. ctx.line .. ": expected an identifier for enum declaration")
 			os.exit(1)
 		end
 		local id = ctx.token_value.name
 		if identifiers[id] and identifiers[id].class then
-			print("line " .. line .. ": attempting to re-define enum '" .. id .. "'")
+			print("line " .. ctx.line .. ": attempting to re-define enum '" .. id .. "'")
 			os.exit(1)
 		end
 		local ws_before_var = ctx.ws
@@ -1005,7 +1013,7 @@ function enum_decl(src, ctx, dbg)
 				ctx = next_token(src, ctx)
 			end
 			if not is_token_num(ctx.token) then
-				print("line " .. line .. ": enum should be initialized with a number")
+				print("line " .. ctx.line .. ": enum should be initialized with a number")
 				os.exit(1)
 			end
 			if is_minus then
@@ -1026,7 +1034,7 @@ function enum_decl(src, ctx, dbg)
 
 		identifiers[id] = {class = classes.enum_decl}
 		if ctx.token ~= ',' and ctx.token ~= '}' then
-			print("line " .. line .. ": expected ',' or '}' after enum declaration")
+			print("line " .. ctx.line .. ": expected ',' or '}' after enum declaration")
 			os.exit(1)
 		end
 
@@ -1042,7 +1050,7 @@ function func_params(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. line .. ": unexpected EOF of function parameters")
+		print("line " .. ctx.line .. ": unexpected EOF of function parameters")
 		os.exit(1)
 	end
 
@@ -1053,11 +1061,11 @@ function func_params(src, ctx, dbg)
 	if enbf_debug then print(dbg .. "func params", ctx.token, ctx.token_value) end
 	while ctx.token ~= ')' do
 		if ctx.token ~= tokens.id then
-			print("line " .. line .. ": expected a type identifier")
+			print("line " .. ctx.line .. ": expected a type identifier")
 			os.exit(1)
 		end
 		if not is_id_token_a_type(ctx.token_value) then
-			print("line " .. line .. ": identifier '" .. tostring(ctx.token_value) .. "' is not a type")
+			print("line " .. ctx.line .. ": identifier '" .. tostring(ctx.token_value) .. "' is not a type")
 			os.exit(1)
 		end
 		local ws_before_type = ctx.ws
@@ -1070,7 +1078,7 @@ function func_params(src, ctx, dbg)
 		end
 
 		if ctx.token ~= tokens.id then
-			print("line " .. line .. ": expected parameter name")
+			print("line " .. ctx.line .. ": expected parameter name")
 			os.exit(1)
 		end
 
@@ -1093,7 +1101,7 @@ function func_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. line .. ": unexpected EOF of function declaration")
+		print("line " .. ctx.line .. ": unexpected EOF of function declaration")
 		os.exit(1)
 	end
 
@@ -1101,7 +1109,7 @@ function func_decl(src, ctx, dbg)
 
 	if enbf_debug then print(dbg .. "func decl", token, token_value) end
 	if ctx.token ~= '(' then
-		print("line " .. line .. ": expected '(' in function declaration")
+		print("line " .. ctx.line .. ": expected '(' in function declaration")
 		os.exit(1)
 	end
 	local ws_before_params = ctx.ws
@@ -1109,14 +1117,14 @@ function func_decl(src, ctx, dbg)
 	params, ctx = func_params(src, ctx, dbg .. "\t")
 	params.ws_before = ws_before_params
 	if ctx.token ~= ')' then
-		print("line " .. line .. ": expected ')' in function declaration")
+		print("line " .. ctx.line .. ": expected ')' in function declaration")
 		os.exit(1)
 	end
 	ctx = next_token(src, ctx)
 	local ws_before_body = ctx.ws
 
 	if ctx.token ~= '{' then
-		print("line " .. line .. ": expected '{' in function declaration")
+		print("line " .. ctx.line .. ": expected '{' in function declaration")
 		os.exit(1)
 	end
 	body, ctx = statement(src, ctx, dbg .. "\t")
@@ -1127,6 +1135,7 @@ function func_decl(src, ctx, dbg)
 	ctx.i = ctx.prev.i
 	ctx.token = ctx.prev.token
 	ctx.token_value = ctx.prev.token_value
+	ctx.line = ctx.prev.line
 	return node:new_func(params, body), ctx
 end
 
@@ -1134,7 +1143,7 @@ function compound_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. line .. ": unexpected EOF of compound declaration")
+		print("line " .. ctx.line .. ": unexpected EOF of compound declaration")
 		os.exit(1)
 	end
 
@@ -1147,7 +1156,7 @@ function compound_decl(src, ctx, dbg)
 		local decl
 		decl, ctx = statement(src, ctx, dbg .. "\t")
 		if ctx.token ~= ';' then
-			print("line " .. line .. ": expected ';' after a statement inside a compound")
+			print("line " .. ctx.line .. ": expected ';' after a statement inside a compound")
 			os.exit(1)
 		end
 		decl.ws_after = ctx.ws .. ';'
@@ -1157,7 +1166,7 @@ function compound_decl(src, ctx, dbg)
 		ctx = next_token(src, ctx)
 	end
 	if not ctx.token then
-		print("line " .. line .. ": unexpected EOF of compound declaration")
+		print("line " .. ctx.line .. ": unexpected EOF of compound declaration")
 		os.exit(1)
 	end
 
@@ -1176,7 +1185,7 @@ function global_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. line .. ": unexpected EOF of global declaration")
+		print("line " .. ctx.line .. ": unexpected EOF of global declaration")
 		os.exit(1)
 	end
 
@@ -1192,7 +1201,7 @@ function global_decl(src, ctx, dbg)
 		local enum_id
 		if ctx.token ~= '{' then
 			if ctx.token ~= tokens.id then
-				print("line " .. line .. ": expected enum identifier in global declaration")
+				print("line " .. ctx.line .. ": expected enum identifier in global declaration")
 				os.exit(1)
 			end
 			enum_id = ctx.token_value.name

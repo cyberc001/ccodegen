@@ -23,7 +23,8 @@ function is_token_num(token)
 	return type(token) == "number" and token >= tokens.num and token <= tokens.num_oct
 end
 function is_token_binary_op(token)
-	return token >= tokens.lor and token <= tokens.member_ptr
+	return token ~= tokens.lnot and token ~= tokens._not
+	and token >= tokens.lor and token <= tokens.member_ptr
 	or token >= tokens.assign and token <= tokens.add_assign
 end
 
@@ -102,7 +103,7 @@ id = {}
 function id:new(o)
 	if type(o) == "string" then
 		local src = o .. ";"
-		local ctx = next_token(src, new_token_ctx(1, "", nil, nil))
+		local ctx = next_token(src, new_token_ctx(1, ""))
 		if ctx.token ~= tokens.id then
 			print("Cannot initialize id from string '" .. o .. "'")
 			os.exit(1)
@@ -144,7 +145,6 @@ function id:__tostring()
 	return s
 end
 
-line = 1
 identifiers = {
 	struct = { class = classes.type_mod },
 	union = { class = classes.type_mod },
@@ -186,11 +186,12 @@ function next_char(src, i)
 	return i + 1, src:sub(i, i), string.byte(src:sub(i, i))
 end
 
-function new_token_ctx(i, ws, token, token_value)
-	return {i = i, token = token, token_value = token_value, ws = ws or ""}
+function new_token_ctx(i, ws, token, token_value, line)
+	line = line or 1
+	return {i = i, token = token, token_value = token_value, ws = ws or "", line = line}
 end
 function copy_token_ctx(ctx)
-	return new_token_ctx(ctx.i, ctx.ws, ctx.token, ctx.token_value)
+	return new_token_ctx(ctx.i, ctx.ws, ctx.token, ctx.token_value, ctx.line)
 end
 
 function next_token(src, ctx)
@@ -201,7 +202,7 @@ function next_token(src, ctx)
 		i, c, c_code = next_char(src, i)
 
 		if c == '\n' then
-			line = line + 1
+			ctx.line = ctx.line + 1
 			ws = ws .. c
 		elseif is_ws(c) then -- пропуск пробелов
 			ws = ws .. c
@@ -210,6 +211,7 @@ function next_token(src, ctx)
 				i, c, c_code = next_char(src, i)
 			end
 			ws = "\n"
+			ctx.line = ctx.line + 1
 		elseif is_valid_id_char(c_code, true) then -- идентификатор
 			local prev_i
 			local mods = {}
@@ -256,7 +258,7 @@ function next_token(src, ctx)
 				id_name = nil
 			end
 
-			return new_token_ctx(i - 1, ws, tokens.id, id:new({name = id_name, mods = mods, mods_ws = mods_ws}))
+			return new_token_ctx(i - 1, ws, tokens.id, id:new({name = id_name, mods = mods, mods_ws = mods_ws}), ctx.line)
 		elseif is_number(c_code) then -- распарсить число
 			local token_type
 			local ch0 = string.byte('0')
@@ -285,20 +287,20 @@ function next_token(src, ctx)
 				end
 				token_type = tokens.num
 			end
-			return new_token_ctx(i - 1, ws, token_type, val)
+			return new_token_ctx(i - 1, ws, token_type, val, ctx.line)
 		elseif c == '/' then
 			_, next_c, next_c_code = next_char(src, i)
 			if next_c == '/' then -- пропуск комментариев
 				while i <= src:len() and c ~= '\n' do
 					i, c, c_code = next_char(src, i)
 				end
-				line = line + 1
+				ctx.line = ctx.line + 1
 				ws = "\n"
 			elseif next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.div_assign)
+				return new_token_ctx(i, ws, tokens.div_assign, nil, ctx.line)
 			else -- оператор деления
-				return new_token_ctx(i, ws, tokens.div)
+				return new_token_ctx(i, ws, tokens.div, nil, ctx.line)
 			end
 		elseif c == '"' or c == "'" then
 			beg_i = i - 1
@@ -313,139 +315,139 @@ function next_token(src, ctx)
 				end
 			end
 
-			return new_token_ctx(i, ws, beg_c == '"' and tokens.str or tokens.char, src:sub(beg_i, i - 1))
+			return new_token_ctx(i, ws, beg_c == '"' and tokens.str or tokens.char, src:sub(beg_i, i - 1), ctx.line)
 		elseif c == '=' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.eq)
+				return new_token_ctx(i, ws, tokens.eq, nil, ctx.line)
 			else
-				return new_token_ctx(i, ws, tokens.assign)
+				return new_token_ctx(i, ws, tokens.assign, nil, ctx.line)
 			end
 		elseif c == '+' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '+' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.inc)
+				return new_token_ctx(i, ws, tokens.inc, nil, ctx.line)
 			elseif next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.add_assign)
+				return new_token_ctx(i, ws, tokens.add_assign, nil, ctx.line)
 			else
-				return new_token_ctx(i, ws, tokens.add)
+				return new_token_ctx(i, ws, tokens.add, nil, ctx.line)
 			end
 		elseif c == '-' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '-' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.dec)
+				return new_token_ctx(i, ws, tokens.dec, nil, ctx.line)
 			elseif next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.sub_assign)
+				return new_token_ctx(i, ws, tokens.sub_assign, nil, ctx.line)
 			elseif next_c == '>' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.member_ptr)
+				return new_token_ctx(i, ws, tokens.member_ptr, nil, ctx.line)
 			else
-				return new_token_ctx(i, ws, tokens.sub)
+				return new_token_ctx(i, ws, tokens.sub, nil, ctx.line)
 			end
 		elseif c == '!' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.ne)
+				return new_token_ctx(i, ws, tokens.ne, nil, ctx.line)
 			else
-				return new_token_ctx(i, ws, tokens.lnot)
+				return new_token_ctx(i, ws, tokens.lnot, nil, ctx.line)
 			end
 		elseif c == '<' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.le)
+				return new_token_ctx(i, ws, tokens.le, nil, ctx.line)
 			elseif next_c == '<' then
 				i, _, _ = next_char(src, i)
 				_, next_c, _ = next_char(src, i)
 				if next_c == '=' then
 					i, _, _ = next_char(src, i)
-					return new_token_ctx(i, ws, tokens.shl_assign)
+					return new_token_ctx(i, ws, tokens.shl_assign, nil, ctx.line)
 				else
-					return new_token_ctx(i, ws, tokens.shl)
+					return new_token_ctx(i, ws, tokens.shl, nil, ctx.line)
 				end
 			else
-				return new_token_ctx(i, ws, tokens.lt)
+				return new_token_ctx(i, ws, tokens.lt, nil, ctx.line)
 			end
 		elseif c == '>' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.ge)
+				return new_token_ctx(i, ws, tokens.ge, nil, ctx.line)
 			elseif next_c == '>' then
 				i, _, _ = next_char(src, i)
 				_, next_c, _ = next_char(src, i)
 				if next_c == '=' then
 					i, _, _ = next_char(src, i)
-					return new_token_ctx(i, ws, tokens.shr_assign)
+					return new_token_ctx(i, ws, tokens.shr_assign, nil, ctx.line)
 				else
-					return new_token_ctx(i, ws, tokens.shr)
+					return new_token_ctx(i, ws, tokens.shr, nil, ctx.line)
 				end
 			else
-				return new_token_ctx(i, ws, tokens.gt)
+				return new_token_ctx(i, ws, tokens.gt, nil, ctx.line)
 			end
 		elseif c == '|' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '|' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.lor)
+				return new_token_ctx(i, ws, tokens.lor, nil, ctx.line)
 			elseif next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.bor_assign)
+				return new_token_ctx(i, ws, tokens.bor_assign, nil, ctx.line)
 			else
-				return new_token_ctx(i, ws, tokens._or)
+				return new_token_ctx(i, ws, tokens._or, nil, ctx.line)
 			end
 		elseif c == '&' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '&' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.land)
+				return new_token_ctx(i, ws, tokens.land, nil, ctx.line)
 			elseif next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.band_assign)
+				return new_token_ctx(i, ws, tokens.band_assign, nil, ctx.line)
 			else
-				return new_token_ctx(i, ws, tokens._and)
+				return new_token_ctx(i, ws, tokens._and, nil, ctx.line)
 			end
 		elseif c == '^' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.xor_assign)
+				return new_token_ctx(i, ws, tokens.xor_assign, nil, ctx.line)
 			else
-				return new_token_ctx(i, ws, tokens.xor)
+				return new_token_ctx(i, ws, tokens.xor, nil, ctx.line)
 			end
 		elseif c == '%' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.mod_assign)
+				return new_token_ctx(i, ws, tokens.mod_assign, nil, ctx.line)
 			else
-				return new_token_ctx(i, ws, tokens.mod)
+				return new_token_ctx(i, ws, tokens.mod, nil, ctx.line)
 			end
 		elseif c == '*' then
 			_, next_c, _ = next_char(src, i)
 			if next_c == '=' then
 				i, _, _ = next_char(src, i)
-				return new_token_ctx(i, ws, tokens.mul_assign)
+				return new_token_ctx(i, ws, tokens.mul_assign, nil, ctx.line)
 			else
-				return new_token_ctx(i, ws, tokens.mul)
+				return new_token_ctx(i, ws, tokens.mul, nil, ctx.line)
 			end
 		elseif c == '?' then
-			return new_token_ctx(i, ws, tokens.cond)
+			return new_token_ctx(i, ws, tokens.cond, nil, ctx.line)
 		elseif c == '~' then
-			return new_token_ctx(i, ws, tokens._not)
+			return new_token_ctx(i, ws, tokens._not, nil, ctx.line)
 		elseif c == '.' then
-			return new_token_ctx(i, ws, tokens.member)
+			return new_token_ctx(i, ws, tokens.member, nil, ctx.line)
 		elseif c == '[' then
-			return new_token_ctx(i, ws, tokens.brack)
+			return new_token_ctx(i, ws, tokens.brack, nil, ctx.line)
 		else
-			return new_token_ctx(i, ws, c)
+			return new_token_ctx(i, ws, c, nil, ctx.line)
 		end
 	end
-	return new_token_ctx()
+	return new_token_ctx(nil, nil, nil, nil, ctx.line)
 end
