@@ -379,7 +379,7 @@ end
 function node:new_enum_decl(decls, name)
 	return node:new({_type = nodes.enum_decl, value = decls, name = name, ws_after_enum = "", ws_after_name = "",
 	print = function(self)
-		local s = "(enum '" .. self.name .. "'\n" .. self.dbg .. "\tdeclarations [\n"
+		local s = "(enum '" .. (self.name and self.name or "") .. "'\n" .. self.dbg .. "\tdeclarations [\n"
 		for _,v in ipairs(self.value) do
 			v.dbg = self.dbg .. "\t"
 			s = s ..  tostring(v) .. ",\n"
@@ -985,7 +985,7 @@ function enum_decl(src, ctx, dbg)
 			os.exit(1)
 		end
 		local id = ctx.token_value.name
-		if identifiers[id].class then
+		if identifiers[id] and identifiers[id].class then
 			print("line " .. line .. ": attempting to re-define enum '" .. id .. "'")
 			os.exit(1)
 		end
@@ -997,20 +997,34 @@ function enum_decl(src, ctx, dbg)
 			var.ws_before = ws_before_var
 			var.ws_after = ctx.ws
 			ctx = next_token(src, ctx) -- пропуск '='
+			local ws_before_val = ctx.ws
+
+			local is_minus = false
+			if ctx.token == tokens.sub then -- частный случай: унарный '-'
+				is_minus = true
+				ctx = next_token(src, ctx)
+			end
 			if not is_token_num(ctx.token) then
 				print("line " .. line .. ": enum should be initialized with a number")
 				os.exit(1)
 			end
+			if is_minus then
+				ctx.token_value = -ctx.token_value
+			end
 			local val = node:new({_type = nodes.num, value = ctx.token_value, token = ctx.token})
-			val.ws_before = ctx.ws
+
+			val.ws_before = ws_before_val
 			table.insert(decls, node:new_bin_op(tokens.assign, var, val))
 			ctx = next_token(src, ctx)
 			val.ws_after = ctx.ws
 		else
-			table.insert(decls, node:new_var(id))
+			local val = node:new_var(id)
+			val.ws_before = ws_before_var
+			val.ws_after = ctx.ws
+			table.insert(decls, val)
 		end
 
-		identifiers[id].class = classes.enum_decl
+		identifiers[id] = {class = classes.enum_decl}
 		if ctx.token ~= ',' and ctx.token ~= '}' then
 			print("line " .. line .. ": expected ',' or '}' after enum declaration")
 			os.exit(1)
@@ -1132,6 +1146,12 @@ function compound_decl(src, ctx, dbg)
 		local ws_before = ctx.ws
 		local decl
 		decl, ctx = statement(src, ctx, dbg .. "\t")
+		if ctx.token ~= ';' then
+			print("line " .. line .. ": expected ';' after a statement inside a compound")
+			os.exit(1)
+		end
+		decl.ws_after = ctx.ws .. ';'
+
 		decl.ws_before = ws_before
 		table.insert(decls, decl)
 		ctx = next_token(src, ctx)
