@@ -3,6 +3,7 @@ function random_int(_min, _max)
 		_max = _min
 		_min = 0
 	end
+	_max = _max + 1
 	return math.floor(math.random() * (_max - _min) + _min)
 end
 
