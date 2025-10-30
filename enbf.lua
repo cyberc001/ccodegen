@@ -810,10 +810,14 @@ function statement(src, ctx, dbg)
 			os.exit(1)
 		end
 		ctx = next_token(src, ctx) -- пропуск ')'
-
+		
 		local ws_before_body = rnode.ws_after .. ctx.ws
 		rnode, ctx = statement(src, ctx, dbg .. "\t")
 		rnode.ws_before = rnode.ws_before .. ws_before_body
+		if ctx.token == ';' then
+			rnode.ws_after = ctx.ws .. ';'
+			ctx = next_token(src, ctx)
+		end
 		if ctx.token == tokens.id and ctx.token_value.name == "else" then
 			rnode.ws_after = rnode.ws_after .. ctx.ws
 			ctx = next_token(src, ctx) -- пропуск ')'
