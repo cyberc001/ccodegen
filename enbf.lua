@@ -616,6 +616,10 @@ function expression(level, src, ctx, dbg)
 				print("line " .. ctx.line .. ": expected ':' in conditional operator")
 				os.exit(1)
 			end
+			if not rnode then
+				print("line " .. ctx.line .. ": conditional operator has no 2nd operand")
+				os.exit(1)
+			end
 			rnode.ws_before = ws_before_first_operand
 			rnode.ws_after = ctx.ws
 

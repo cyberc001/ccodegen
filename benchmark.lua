@@ -22,9 +22,8 @@ function init_bench_decls(file_name)
 	return os.clock() - tbeg, chars, lines
 end
 
-
-local file_names = {"bench_linux_mei_amt_version.c", "bench_linux_pfsm_wakeup.c", "bench_linux_ucon.c", "bench_linux_hpet_example.c", "bench_linux_kernel_debug_core.c", "bench_linux_xxhash.c"}
-local test_amt = 100
+local file_names = {"bench_linux_pfsm_wakeup.c", "bench_linux_ucon.c", "bench_linux_hpet_example.c", "bench_linux_xxhash.c", "bench_linux_mei_amt_version.c", "bench_linux_stm32_omm.c", "bench_linux_gpio_fan.c", "bench_linux_debug_core.c", "bench_linux_slicoss.c", "bench_linux_sd.c", "bench_linux_adm1026.c"}
+local test_amt = 1000
 
 for _, v in ipairs(file_names) do
 	local test_min = math.maxinteger
