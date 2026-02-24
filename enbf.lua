@@ -9,7 +9,7 @@ nodes = {
 	un_op = 30, bin_op = 31, cond = 32, index = 33,
 	parantheses = 40, braces = 41, comma = 42,
 
-	_if = 50, _while = 51, _for = 52, do_while = 53,
+	_if = 50, _while = 51, _for = 52, do_while = 53, switch = 54,
 
 	compound = 60
 }
@@ -276,6 +276,41 @@ function node:new_do_while(cond, body)
 	end,
 	get_children = function(self)
 		return {self.cond, self.value}
+	end
+	})
+end
+
+-- cases - массив объектов {ws_before_case: string, value: node, statements: [node], ws_after_default: string|nil (только если value == nil - метка default)}
+function node:new_switch(value, cases)
+	return node:new({_type = nodes.switch, value = value, cases = cases, ws_after_switch = "", ws_after_cond = "", ws_before_body_end = "",
+	print = function(self)
+		self.value.dbg = self.dbg .. "\t"
+		local s = "(switch\n" .. self.dbg .. "\tcondition\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\tcases\n"
+		for _, v in ipairs(self.cases) do
+			if v.value then
+				v.value.dbg = self.dbg .. "\t\t\t"
+			end
+			s = s .. self.dbg .. (v.value and "\t\tvalue:\n" .. tostring(v.value) or "\t\tdefault") .. "\n" .. self.dbg .. "\t\tstatements:\n"
+			for _, v2 in ipairs(v.statements) do
+				v2.dbg = self.dbg .. "\t\t\t"
+				s = s .. tostring(v2) .. "\n"
+			end
+		end
+		return s
+	end,
+	_src = function(self)
+		local s = "switch" .. self.ws_after_switch .. "(" .. self.value:src() .. ")" .. self.ws_after_cond .. "{"
+		for _, v in ipairs(self.cases) do
+			if v.value then
+				s = s .. v.ws_before_case .. "case" .. v.value:src() .. ":"
+			else
+				s = s .. v.ws_before_case .. "default" .. v.ws_after_default .. ":"
+			end
+			for _, v2 in ipairs(v.statements) do
+				s = s .. v2:src()
+			end
+		end
+		return s .. self.ws_before_body_end .. "}"
 	end
 	})
 end
@@ -958,6 +993,69 @@ function statement(src, ctx, dbg)
 
 		res.ws_after_for = ws_after_for
 		res.ws_before_body = ws_before_body
+		return res, ctx
+	elseif ctx.token == tokens.id and ctx.token_value.name == "switch" then
+		ctx = next_token(src, ctx) -- пропуск 'switch'
+		local ws_after_switch = ctx.ws
+		if ctx.token ~= '(' then
+			print("line " .. ctx.line .. ": expected '(' after 'switch'")
+			os.exit(1)
+		end
+
+		ctx = next_token(src, ctx) -- пропуск '('
+		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+		local cond = rnode
+		if ctx.token ~= ')' then
+			print("line " .. ctx.line .. ": expected ')' after switch condition")
+			os.exit(1)
+		end
+		local ws_after_cond = ctx.ws
+		ctx = next_token(src, ctx) -- пропуск ')'
+		if ctx.token ~= '{' then
+			print("line " .. ctx.line .. ": expected '{' after switch condition")
+			os.exit(1)
+		end
+		ctx = next_token(src, ctx) -- пропуск '{'
+
+		local cases = {}
+		while ctx.token ~= '}' do
+			if ctx.token == tokens.id and (ctx.token_value.name == "case" or ctx.token_value.name == "default") then
+				local is_default = ctx.token_value.name == "default"
+				local new_case = {ws_before_case = ctx.ws, statements = {}}
+				ctx = next_token(src, ctx) -- пропуск 'case'/'default'
+				local ws_before_val = ctx.ws
+				if not is_default then
+					new_case.value, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+				end
+				if ctx.token ~= ':' then
+					print("line " .. ctx.line .. ": expected ':' after switch label")
+					os.exit(1)
+				end
+				if not is_default then
+					new_case.value.ws_before = ws_before_val
+					new_case.value.ws_after = ctx.ws
+				else
+					new_case.ws_after_default = ws_before_val
+				end
+				ctx = next_token(src, ctx) -- пропуск ':'
+				table.insert(cases, new_case)
+			else
+				if #cases == 0 then
+					print("line " .. ctx.line .. ": statement should be preceeded by a case label")
+					os.exit(1)
+				end
+
+				local ws_before_statement = ctx.ws
+				rnode, ctx = statement(src, ctx, dbg .. "\t")
+				rnode.ws_before = ws_before_statement
+				table.insert(cases[#cases].statements, rnode)
+			end
+		end
+
+		local res = node:new_switch(cond, cases)
+		res.ws_after_switch = ws_after_switch
+		res.ws_after_cond = ws_after_cond
+		res.ws_before_body_end = ctx.ws
 		return res, ctx
 	elseif ctx.token == '{' then
 		ctx = next_token(src, ctx) -- пропуск '{'
