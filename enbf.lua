@@ -650,7 +650,7 @@ function expression(level, src, ctx, dbg)
 			rnode.ws_before = rnode.ws_before .. ws_before_value
 			unit_node = node:new_parantheses(rnode)
 		end
-	elseif ctx.token == tokens.mul or ctx.token == tokens._and or ctx.token == tokens.lnot or ctx.token == tokens._not or ctx.token == tokens.add or ctx.token == tokens.inc or ctx.token == tokens.dec then -- унарные операторы
+	elseif ctx.token == tokens.mul or ctx.token == tokens._and or ctx.token == tokens.lnot or ctx.token == tokens._not or ctx.token == tokens.add or ctx.token == tokens.inc or ctx.token == tokens.dec or ctx.token == tokens.member then -- унарные операторы
 		local op = ctx.token
 		ctx = next_token(src, ctx)
 		rnode, ctx = expression(tokens.inc, src, ctx, dbg .. "\t")
