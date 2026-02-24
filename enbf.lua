@@ -2,6 +2,7 @@ require "token"
 require "os"
 
 nodes = {
+	semicolon = 0,
 	num = 1, str = 2, char = 3,
 	call = 10, var = 12, params = 13, decl = 14, func = 15, enum_decl = 16,
 	cast = 20,
@@ -46,6 +47,10 @@ end
 
 -- возвращает исходный код узла
 function node:_src()
+	if not self.value then
+		return ""
+	end
+
 	local val = tostring(self.value)
 	if self._type == nodes.num then
 		if self.token == tokens.num_hex then
@@ -398,6 +403,16 @@ function node:new_compound(decls, compound_type, name)
 end
 
 ---------------------[[ Другое ]]---------------------
+function node:new_semicolon()
+	return node:new({_type = nodes.semicolon,
+	print = function(self)
+		return "(semicolon)"
+	end,
+	_src = function(self)
+		return ";"
+	end
+	})
+end
 function node:new_enum_decl(decls, name)
 	return node:new({_type = nodes.enum_decl, value = decls, name = name, ws_after_enum = "", ws_after_name = "",
 	print = function(self)
@@ -875,9 +890,6 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx) -- пропуск ')'
 		local ws_before_body = ctx.ws
 		rnode2, ctx = statement(src, ctx, dbg .. "\t")
-		if not rnode2 then
-			ws_before_body = ws_before_body .. ';'
-		end
 
 		local res = node:new_while(rnode, rnode2)
 		res.ws_after_while = ws_after_while
@@ -983,9 +995,7 @@ function statement(src, ctx, dbg)
 		rnode, ctx = statement(src, ctx, dbg .. "\t")
 
 		local ws_after_body = ctx.ws
-		if not rnode then
-			ws_after_body = ';' .. ws_after_body
-		elseif ctx.token == ';' then
+		if ctx.token == ';' then
 			ctx = next_token(src, ctx)
 			ws_after_body = ';' .. ctx.ws
 		end
@@ -1011,12 +1021,17 @@ function statement(src, ctx, dbg)
 			os.exit(1)
 		end
 
+		ctx = next_token(src, ctx) -- пропуск ')'
+		if ctx.token ~= ';' then
+			print("line " .. ctx.line .. ": expected ';' after do while condition")
+			os.exit(1)
+		end
+
 		local res = node:new_do_while(rnode2, rnode)
 		res.ws_after_do = ws_after_do
 		res.ws_after_body = ws_after_body
 		res.ws_after_while = ws_after_while
 		return res, ctx
-		
 	elseif ctx.token == tokens.id and ctx.token_value.name == "return" then
 		ctx = next_token(src, ctx)
 		rnode = nil
@@ -1036,7 +1051,7 @@ function statement(src, ctx, dbg)
 		return rnode, ctx
 	elseif ctx.token == ';' then -- пустое утверждение
 		ctx = next_token(src, ctx)
-		return nil, ctx
+		return node:new_semicolon(), ctx
 	else -- присваивание или вызов функции
 		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 		if ctx.token ~= ';' and ctx.token ~= ')' then
