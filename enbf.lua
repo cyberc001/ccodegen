@@ -4,7 +4,7 @@ require "os"
 nodes = {
 	semicolon = 0,
 	num = 1, str = 2, char = 3,
-	call = 10, var = 12, params = 13, decl = 14, func = 15, enum_decl = 16,
+	call = 10, var = 12, params = 13, decl = 14, func = 15, enum_decl = 16, label = 17,
 	cast = 20,
 	un_op = 30, bin_op = 31, cond = 32, index = 33,
 	parantheses = 40, braces = 41, comma = 42,
@@ -311,6 +311,14 @@ function node:new_switch(value, cases)
 			end
 		end
 		return s .. self.ws_before_body_end .. "}"
+	end,
+	get_children = function(self)
+		local c = {}
+		for _, v in ipairs(self.cases) do
+			for _, v2 in ipairs(v.statements) do
+				table.insert(c, v2)
+			end
+		end
 	end
 	})
 end
@@ -414,6 +422,20 @@ function node:new_decl(var_type, vars)
 	})
 end
 
+function node:new_label(name)
+	return node:new({_type = nodes.label, value = name, ws_after_name = "",
+	print = function(self)
+		return "(label '" .. self.value .. "')"
+	end,
+	_src = function(self)
+		return self.value .. self.ws_after_name .. ":"
+	end,
+	get_children = function(self)
+		return {}
+	end
+	})
+end
+
 function node:new_compound(decls, compound_type, name)
 	return node:new({_type = nodes.compound, value = decls, name = name, ws_after_type = "", ws_after_name = "",
 	print = function(self)
@@ -445,6 +467,9 @@ function node:new_semicolon()
 	end,
 	_src = function(self)
 		return ";"
+	end,
+	get_children = function(self)
+		return {}
 	end
 	})
 end
@@ -1152,6 +1177,17 @@ function statement(src, ctx, dbg)
 		return node:new_semicolon(), ctx
 	else -- присваивание или вызов функции
 		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+		if ctx.token == ':' then -- метка
+			if not rnode or rnode._type ~= nodes.var then
+				print("line " .. ctx.line .. ": expected a label name")
+				os.exit(1)
+			end
+			local ws_after_name = ctx.ws
+			ctx = next_token(src, ctx) -- пропуск ':'
+			local res = node:new_label(rnode.value.name)
+			res.ws_after_name = ws_after_name
+			return res, ctx
+		end
 		if ctx.token ~= ';' and ctx.token ~= ')' then
 			print("line " .. ctx.line .. ": expected ';' or ')' after statement, got " .. token_to_str(ctx.token))
 			os.exit(1)
