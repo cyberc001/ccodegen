@@ -1311,7 +1311,9 @@ function global_decl(src, ctx, dbg)
 		return rnode, ctx
 	end
 
+	local ws_before = ctx.ws
 	rnode, ctx = statement(src, ctx, dbg .. "\t")
+	rnode.ws_before = ws_before .. rnode.ws_before
 	rnode.ws_after = rnode.ws_after .. ctx.ws
 	if ctx.token == ';' then
 		rnode.ws_after = rnode.ws_after .. ';'
