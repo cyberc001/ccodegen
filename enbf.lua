@@ -833,7 +833,7 @@ function statement(src, ctx, dbg)
 			end
 			decl.ws_after = ctx.ws
 
-			if ctx.token == '[' then
+			if ctx.token == tokens.brack then
 				ctx = next_token(src, ctx)
 				local ws_before_idx = ctx.ws
 				rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
@@ -881,7 +881,7 @@ function statement(src, ctx, dbg)
 			rnode.return_type = type_id
 			return rnode, ctx
 		end
-		-- объявление переменной (переменных)
+		-- объявление переменной (переменных)	
 		if ctx.token ~= ';' then
 			print("line " .. ctx.line .. ": expected ';' after variable declaration, got " .. token_to_str(ctx.token))
 			os.exit(1)
