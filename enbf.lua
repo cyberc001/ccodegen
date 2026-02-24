@@ -8,7 +8,7 @@ nodes = {
 	un_op = 30, bin_op = 31, cond = 32, index = 33,
 	parantheses = 40, braces = 41, comma = 42,
 
-	_if = 50, _while = 51, _for = 52,
+	_if = 50, _while = 51, _for = 52, do_while = 53,
 
 	compound = 60
 }
@@ -130,10 +130,11 @@ function node:new_un_op(op, x, postfix)
 	return node:new({_type = nodes.un_op, op = op, value = x, postfix = postfix,
 	print = function(self)
 		self.value.dbg = self.dbg .. "\t"
-		return "(unary op " .. token_to_str(self.op) .. "\n" .. self.dbg .. "\tvalue\n" .. tostring(self.value) .. "\n" .. self.dbg .. (postfix and "postfix)" or ")")
+		return "(unary op " .. token_to_str(self.op) .. "\n" .. self.dbg .. "\tvalue\n" .. tostring(self.value) .. "\n" .. self.dbg .. (self.postfix and "postfix)" or ")")
 	end,
 	_src = function(self)
-		return token_to_str(self.op) .. self.value:src()
+		return self.postfix and (self.value:src() .. token_to_str(self.op))
+				     or (token_to_str(self.op) .. self.value:src())
 	end
 	})
 end
@@ -205,11 +206,13 @@ function node:new_while(cond, body)
 	return node:new({_type = nodes._while, value = body, cond = cond, ws_after_while = "", ws_before_body = "",
 	print = function(self)
 		self.cond.dbg = self.dbg .. "\t"
-		self.value.dbg = self.dbg .. "\t"
-		return "(while\n" .. self.dbg .. "\tcond\n" .. tostring(self.cond) .. ",\n" .. self.dbg .. "\tbody\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)"
+		if self.value then
+			self.value.dbg = self.dbg .. "\t"
+		end
+		return "(while\n" .. self.dbg .. "\tcond\n" .. tostring(self.cond) .. ",\n" .. self.dbg .. "\tbody\n" .. (self.value and tostring(self.value) or "none") .. "\n" .. self.dbg .. "\t)"
 	end,
 	_src = function(self)
-		return "while" .. self.ws_after_while .. "(" .. self.cond:src() .. ")" .. self.ws_before_body .. self.value:src()
+		return "while" .. self.ws_after_while .. "(" .. self.cond:src() .. ")" .. self.ws_before_body .. (self.value and self.value:src() or "")
 	end,
 	get_children = function(self)
 		return {self.cond, self.value}
@@ -254,6 +257,25 @@ function node:new_for(begin, cond, iter, body)
 	end
 	})
 end
+function node:new_do_while(cond, body)
+	return node:new({_type = nodes.do_while, value = body, cond = cond, ws_after_do = "", ws_after_body = "", ws_after_while = "",
+	print = function(self)
+		self.cond.dbg = self.dbg .. "\t"
+		if self.value then
+			self.value.dbg = self.dbg .. "\t"
+		end
+		return "(do while\n" .. self.dbg .. "\tcond\n" .. tostring(self.cond) .. ",\n" .. self.dbg .. "\tbody\n" .. (self.value and tostring(self.value) or "none") .. "\n" .. self.dbg .. "\t)"
+	end,
+	_src = function(self)
+		return "do" .. self.ws_after_do .. (self.value and self.value:src() or "") .. self.ws_after_body .. "while" .. self.ws_after_while .. "(" .. self.cond:src() .. ")"
+	end,
+	get_children = function(self)
+		return {self.cond, self.value}
+	end
+	})
+end
+
+
 function node:new_return(value)
 	return node:new({_type = nodes._return, value = value,
 	print = function(self)
@@ -853,6 +875,9 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx) -- пропуск ')'
 		local ws_before_body = ctx.ws
 		rnode2, ctx = statement(src, ctx, dbg .. "\t")
+		if not rnode2 then
+			ws_before_body = ws_before_body .. ';'
+		end
 
 		local res = node:new_while(rnode, rnode2)
 		res.ws_after_while = ws_after_while
@@ -952,6 +977,46 @@ function statement(src, ctx, dbg)
 		braces.ws_after_opening = ws_after_opening
 		ctx.prev = prev
 		return braces, ctx
+	elseif ctx.token == tokens.id and ctx.token_value.name == "do" then
+		ctx = next_token(src, ctx)
+		local ws_after_do = ctx.ws
+		rnode, ctx = statement(src, ctx, dbg .. "\t")
+
+		local ws_after_body = ctx.ws
+		if not rnode then
+			ws_after_body = ';' .. ws_after_body
+		elseif ctx.token == ';' then
+			ctx = next_token(src, ctx)
+			ws_after_body = ';' .. ctx.ws
+		end
+		if ctx.token ~= tokens.id or ctx.token_value.name ~= "while" then
+			print("line " .. ctx.line .. ": expected 'while' after 'do' body, got " .. token_to_str(ctx.token))
+			os.exit(1)
+		end
+
+		ctx = next_token(src, ctx)
+		local ws_after_while = ctx.ws
+		if ctx.token ~= '(' then
+			print("line " .. ctx.line .. ": expected '(' after 'while'")
+			os.exit(1)
+		end
+		ctx = next_token(src, ctx) -- пропуск '('
+		
+		local ws_before_cond = ctx.ws
+		rnode2, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+		rnode2.ws_before = ws_before_cond
+		rnode2.ws_after = ctx.ws
+		if ctx.token ~= ')' then
+			print("line " .. ctx.line .. ": expected ')' after do while condition")
+			os.exit(1)
+		end
+
+		local res = node:new_do_while(rnode2, rnode)
+		res.ws_after_do = ws_after_do
+		res.ws_after_body = ws_after_body
+		res.ws_after_while = ws_after_while
+		return res, ctx
+		
 	elseif ctx.token == tokens.id and ctx.token_value.name == "return" then
 		ctx = next_token(src, ctx)
 		rnode = nil

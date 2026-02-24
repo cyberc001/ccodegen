@@ -150,6 +150,9 @@ identifiers = {
 	union = { class = classes.type_mod },
 
 	const = { class = classes.type_mod },
+	static = { class = classes.type_mod },
+	inline = { class = classes.type_mod },
+
 	short = { class = classes.type_mod },
 	long = { class = classes.type_mod },
 	unsigned = { class = classes.type_mod },
