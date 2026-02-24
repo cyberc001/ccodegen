@@ -299,6 +299,18 @@ function next_token(src, ctx)
 				end
 				ctx.line = ctx.line + 1
 				ws = "\n"
+			elseif next_c == '*' then -- пропуск многострочных комментариев
+				i, _, _ = next_char(src, i) -- пропуск *
+				while i <= src:len() do
+					i, c, c_code = next_char(src, i)
+					if c == '*' and i < src:len() then
+						_, next_c, next_c_code = next_char(src, i)
+						if next_c == '/' then
+							i, _, _ = next_char(src, i) -- пропуск *
+							break
+						end
+					end
+				end
 			elseif next_c == '=' then
 				i, _, _ = next_char(src, i)
 				return new_token_ctx(i, ws, tokens.div_assign, nil, ctx.line)
