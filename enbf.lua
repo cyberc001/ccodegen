@@ -4,7 +4,7 @@ require "os"
 nodes = {
 	semicolon = 0,
 	num = 1, str = 2, char = 3,
-	call = 10, var = 12, params = 13, decl = 14, func = 15, enum_decl = 16, label = 17,
+	call = 10, var = 12, params = 13, decl = 14, func = 15, enum_decl = 16, label = 17, typedef = 18,
 	cast = 20,
 	un_op = 30, bin_op = 31, cond = 32, index = 33,
 	parantheses = 40, braces = 41, comma = 42,
@@ -432,6 +432,19 @@ function node:new_label(name)
 	end,
 	get_children = function(self)
 		return {}
+	end
+	})
+end
+
+-- Схоже с decl, но только одна переменная
+function node:new_typedef(var_type, var)
+	return node:new({_type = nodes.typedef, var_type = var_type, value = var, ws_after_typedef,
+	print = function(self)
+		self.value.dbg = self.dbg .. "\t"
+		return "(typedef [" .. tostring(self.var_type) .. "]\n" .. tostring(self.value) .. "\n" .. self.dbg .. ")"
+	end,
+	_src = function(self)
+		return "typedef" .. self.ws_after_typedef .. tostring(self.var_type._type == nodes.compound and self.var_type:src() or tostring(self.var_type)) .. self.value:src()
 	end
 	})
 end
@@ -1082,6 +1095,31 @@ function statement(src, ctx, dbg)
 		res.ws_after_cond = ws_after_cond
 		res.ws_before_body_end = ctx.ws
 		return res, ctx
+	elseif ctx.token == tokens.id and ctx.token_value.name == "typedef" then
+		ctx = next_token(src, ctx) -- пропуск 'typedef'
+		local ws_after_typedef = ctx.ws
+		if ctx.token ~= tokens.id or not is_id_token_a_type(ctx.token_value) then
+			print("line " .. ctx.line .. ": expected type identifier after 'typedef'")
+			os.exit(1)
+		end
+		local var_type = ctx.token_value
+		ctx = next_token(src, ctx)
+		if ctx.token ~= tokens.id or is_id_token_a_type(ctx.token_value) then
+			print("line " .. ctx.line .. ": expected type name after typedef type identifier")
+			os.exit(1)
+		end
+		local var = node:new_var(ctx.token_value)
+		var.ws_before = ctx.ws
+		local res = node:new_typedef(var_type, var)
+		res.ws_after_typedef = ws_after_typedef
+
+		ctx = next_token(src, ctx)
+		if identifiers[var.value.name] ~= nil then
+			print("line " .. ctx.line .. ": redefinition of type '" .. var.value.name .. "'")
+			os.exit(1)
+		end
+		identifiers[var.value.name] = { class = classes._type }
+		return res, ctx
 	elseif ctx.token == '{' then
 		ctx = next_token(src, ctx) -- пропуск '{'
 		local ws_after_opening = ctx.ws
@@ -1452,5 +1490,8 @@ function global_decl(src, ctx, dbg)
 	if ctx.token == ';' then
 		rnode.ws_after = rnode.ws_after .. ';'
 	end
+	
+	if enbf_debug then print(dbg .. "global decl returning", ctx.token, ctx.token_value) end
+
 	return rnode, ctx
 end
