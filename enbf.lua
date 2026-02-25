@@ -242,17 +242,13 @@ function node:new_for(begin, cond, iter, body)
 	end,
 	_src = function(self)
 		local s = "for" .. self.ws_after_for .. "("
-		local nil_statement_i = 0
 		local statements = {self.begin, self.cond, self.iter}
 		for i = 1, 3 do
-			if not statements[i] then
-				nil_statement_i = nil_statement_i + 1
-				s = s .. self.ws_for_nil_statements[nil_statement_i]
-			else
+			if statements[i] then
 				s = s .. statements[i]:src()
-			end
-			if i < 3 then
-				s = s .. ";"
+				if i < 3 and statements[i]._type ~= nodes.semicolon then
+					s = s .. ";"
+				end
 			end
 		end
 		return s .. ")" .. self.ws_before_body .. (self.value and self.value:src() or ";")
@@ -497,7 +493,7 @@ function node:new_enum_decl(decls, name)
 		return s .. self.dbg .. "\t])"
 	end,
 	_src = function(self)
-		local s = "enum " .. self.ws_after_enum .. (self.name or "") .. self.ws_after_name .. "{"
+		local s = "enum" .. self.ws_after_enum .. (self.name or "") .. self.ws_after_name .. "{"
 		if #self.value > 0 then
 			for i, v in ipairs(self.value) do
 				if i > 1 then
@@ -976,50 +972,46 @@ function statement(src, ctx, dbg)
 			os.exit(1)
 		end
 
-		local res = node:new_for(begin, cond, iter, rnode2)
+		local res = node:new_for(nil, nil, nil, rnode2)
 
 		ctx = next_token(src, ctx) -- пропуск '('
 		local ws_before = ctx.ws
 		res.begin, ctx = statement(src, ctx, dbg .. "\t")
-		if res.begin then
-			res.begin.ws_before = ws_before
-			res.begin.ws_after = ctx.ws
-		else
-			table.insert(res.ws_for_nil_statements, ws_before)
-		end
-		if ctx.token ~= ';' and res.begin then
+		res.begin.ws_before = ws_before
+		res.begin.ws_after = ctx.ws
+		if ctx.token ~= ';' and res.begin._type ~= nodes.semicolon then
 			print("line " .. ctx.line .. ": expected ';' after beginning statement of 'for' loop, got " .. token_to_str(ctx.token))
 			os.exit(1)
 		end
-
-		if res.begin then -- если res.begin == nil, то пустое утверждение ';' уже было пропущено
+		if res.begin._type ~= nodes.semicolon then
 			ctx = next_token(src, ctx) -- пропуск ';'
-		end
-		ws_before = ctx.ws
-		res.cond, ctx = statement(src, ctx, dbg .. "\t")
-		if res.cond then
-			res.cond.ws_before = ws_before
-			res.cond.ws_after = ctx.ws
+			ws_before = ctx.ws
 		else
-			table.insert(res.ws_for_nil_statements, ws_before)
+			ws_before = ""
 		end
-		if ctx.token ~= ';' and res.cond then
+
+		res.cond, ctx = statement(src, ctx, dbg .. "\t")
+		res.cond.ws_before = ws_before
+		res.cond.ws_after = ctx.ws
+		if ctx.token ~= ';' and res.cond._type ~= nodes.semicolon then
 			print("line " .. ctx.line .. ": expected ';' after conditional statement of 'for' loop, got " .. token_to_str(ctx.token))
 			os.exit(1)
 		end
 
-		if res.cond then -- если res.cond == nil, то пустое утверждение ';' уже было пропущено
+		if res.cond._type ~= nodes.semicolon then
 			ctx = next_token(src, ctx) -- пропуск ';'
+			ws_before = ctx.ws
+		else
+			ws_before = ""
 		end
-		ws_before = ctx.ws
 		res.iter, ctx = statement(src, ctx, dbg .. "\t")
+		print("res.iter", res.iter, "token", ctx.token)
 		if res.iter then
 			res.iter.ws_before = ws_before
 			res.iter.ws_after = ctx.ws
 		else
-			table.insert(res.ws_for_nil_statements, ws_before)
+			res.cond.ws_after = res.cond.ws_after .. ws_before .. ctx.ws
 		end
-
 		if ctx.token ~= ')' then
 			print("line " .. ctx.line .. ": expected ')' after iterating statement of 'for' loop")
 			os.exit(1)
@@ -1480,15 +1472,19 @@ function global_decl(src, ctx, dbg)
 
 		rnode.ws_after_enum = ws_after_enum
 		rnode.ws_after_name = ws_after_name
+		rnode.ws_after = rnode.ws_after .. ctx.ws
+		if ctx.token == ';' then
+			local next_ctx = next_token(src, ctx)
+			rnode.ws_after = rnode.ws_after .. ';' .. next_ctx.ws
+		end
 		return rnode, ctx
 	end
 
-	local ws_before = ctx.ws
 	rnode, ctx = statement(src, ctx, dbg .. "\t")
-	rnode.ws_before = ws_before .. rnode.ws_before
 	rnode.ws_after = rnode.ws_after .. ctx.ws
 	if ctx.token == ';' then
-		rnode.ws_after = rnode.ws_after .. ';'
+		local next_ctx = next_token(src, ctx)
+		rnode.ws_after = rnode.ws_after .. ';' .. next_ctx.ws
 	end
 	
 	if enbf_debug then print(dbg .. "global decl returning", ctx.token, ctx.token_value) end

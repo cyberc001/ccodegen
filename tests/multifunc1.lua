@@ -3,6 +3,10 @@ init_test_decls("multifunc1.c")
 
 TestMultiFunc1 = {}
 
+function TestMultiFunc1:TestSrc()
+	lu.assertTrue(test_src())
+end
+
 function TestMultiFunc1:TestGlobalDeclCount()
 	lu.assertEquals(#global_decls, 3)
 end
@@ -150,7 +154,7 @@ function TestMultiFunc1:TestForLoopHeads()
 	end
 
 	for _, v in ipairs(loops) do
-		lu.assertNil(v.begin)
+		lu.assertEquals(v.begin._type, nodes.semicolon)
 		lu.assertEquals(v.cond._type, nodes.bin_op)
 		lu.assertTrue(v.cond.op == tokens.ge or v.cond.op == tokens.gt
 				or v.cond.op == tokens.land)

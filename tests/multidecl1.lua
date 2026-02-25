@@ -3,6 +3,10 @@ init_test_decls("multidecl1.c")
 
 TestMultiDecl1 = {}
 
+function TestMultiDecl1:TestSrc()
+	lu.assertTrue(test_src())
+end
+
 function TestMultiDecl1:TestGlobalDeclCount()
 	lu.assertEquals(#global_decls, 6)
 end

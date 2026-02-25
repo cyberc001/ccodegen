@@ -298,7 +298,7 @@ function next_token(src, ctx)
 					i, c, c_code = next_char(src, i)
 				end
 				ctx.line = ctx.line + 1
-				ws = "\n"
+				ws = ws .. "\n"
 			elseif next_c == '*' then -- пропуск многострочных комментариев
 				i, _, _ = next_char(src, i) -- пропуск *
 				while i <= src:len() do

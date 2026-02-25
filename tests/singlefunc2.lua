@@ -3,6 +3,10 @@ init_test_decls("singlefunc2.c")
 
 TestSingleFunc2 = {}
 
+function TestSingleFunc2:TestSrc()
+	lu.assertTrue(test_src())
+end
+
 function TestSingleFunc2:TestSingleGlobalDecl()
 	lu.assertEquals(#global_decls, 1)
 end
