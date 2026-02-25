@@ -4,7 +4,7 @@ require "os"
 nodes = {
 	semicolon = 0,
 	num = 1, str = 2, char = 3,
-	call = 10, var = 12, params = 13, decl = 14, func = 15, enum_decl = 16, label = 17, typedef = 18,
+	call = 10, var = 12, params = 13, decl = 14, func = 15, enum_decl = 16, label = 17, typedef = 18, _goto = 19,
 	cast = 20,
 	un_op = 30, bin_op = 31, cond = 32, index = 33,
 	parantheses = 40, braces = 41, comma = 42,
@@ -441,6 +441,20 @@ function node:new_typedef(var_type, var)
 	end,
 	_src = function(self)
 		return "typedef" .. self.ws_after_typedef .. tostring(self.var_type._type == nodes.compound and self.var_type:src() or tostring(self.var_type)) .. self.value:src()
+	end
+	})
+end
+
+function node:new_goto(label_name)
+	return node:new({_type = nodes._goto, value = label_name, ws_after_goto = "",
+	print = function(self)
+		return "(goto '" .. self.value .. "')"
+	end,
+	_src = function(self)
+		return "goto" .. self.ws_after_goto .. self.value
+	end,
+	get_children = function(self)
+		return {}
 	end
 	})
 end
@@ -1184,6 +1198,19 @@ function statement(src, ctx, dbg)
 		res.ws_after_do = ws_after_do
 		res.ws_after_body = ws_after_body
 		res.ws_after_while = ws_after_while
+		return res, ctx
+	elseif ctx.token == tokens.id and ctx.token_value.name == "goto" then
+		ctx = next_token(src, ctx)
+		if ctx.token ~= tokens.id or is_id_token_a_type(ctx.token_value) then
+			print("line " .. ctx.line .. ": expected an identifier after 'goto'")
+			os.exit(1)
+		end
+		local label_name = ctx.token_value.name
+		local ws_after_goto = ctx.ws
+		ctx = next_token(src, ctx) -- пропуск имени метки
+
+		local res = node:new_goto(label_name)
+		res.ws_after_goto = ws_after_goto
 		return res, ctx
 	elseif ctx.token == tokens.id and ctx.token_value.name == "return" then
 		ctx = next_token(src, ctx)
