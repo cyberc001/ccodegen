@@ -1019,7 +1019,6 @@ function statement(src, ctx, dbg)
 			ws_before = ""
 		end
 		res.iter, ctx = statement(src, ctx, dbg .. "\t")
-		print("res.iter", res.iter, "token", ctx.token)
 		if res.iter then
 			res.iter.ws_before = ws_before
 			res.iter.ws_after = ctx.ws
@@ -1100,6 +1099,8 @@ function statement(src, ctx, dbg)
 		res.ws_after_switch = ws_after_switch
 		res.ws_after_cond = ws_after_cond
 		res.ws_before_body_end = ctx.ws
+
+		ctx = next_token(src, ctx)
 		return res, ctx
 	elseif ctx.token == tokens.id and ctx.token_value.name == "typedef" then
 		ctx = next_token(src, ctx) -- пропуск 'typedef'
@@ -1246,7 +1247,7 @@ function statement(src, ctx, dbg)
 			return res, ctx
 		end
 		if ctx.token ~= ';' and ctx.token ~= ')' then
-			print("line " .. ctx.line .. ": expected ';' or ')' after statement, got " .. token_to_str(ctx.token))
+			print("line " .. ctx.line .. ": expected ';' or ')' after expression-statement, got " .. token_to_str(ctx.token))
 			os.exit(1)
 		end
 		return rnode, ctx

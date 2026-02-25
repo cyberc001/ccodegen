@@ -1,15 +1,21 @@
 // Тест multidecl1:
 // Глобальные объявления разных видов.
+// - compound declaration
+// - typedef
+// - struct
+// - enum
+// - array variable
 
+typedef struct vec vec;
 struct vec {
 	double x, y;
 	double z;
-} vec_one = {1, 0};
+} vec_one = {.y = 1, 0};
 struct neg_log_likelihood_ns_loss_args {
 	struct vec pre_y;
 };
 
-double squared_loss(struct vec y, struct vec _y, void* args)
+double squared_loss(struct vec y, vec _y, void* args)
 {
 	double l = 0;
 	for(size_t i = 0; i < y.n; ++i)
@@ -23,7 +29,7 @@ enum {
 	GRAD_INF = -10
 };
 
-double neg_log_likelihood_ns_loss(struct vec _y, struct vec y, void* _args)
+double neg_log_likelihood_ns_loss(vec _y, struct vec y, void* _args)
 {
 	struct neg_log_likelihood_ns_loss_args* args = _args;
 	double l = -log(_y.data[args->neg_idx[0]]);
@@ -31,6 +37,8 @@ double neg_log_likelihood_ns_loss(struct vec _y, struct vec y, void* _args)
 		l -= log(sigmoid(-args->pre_y.data[args->neg_idx[i]]));
 	return l;
 }
+
+vec coords[3];
 
 enum shader_result {
 	SHADER_COMPILE_SYNTAX_ERROR,

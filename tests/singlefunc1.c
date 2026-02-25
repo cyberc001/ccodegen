@@ -1,5 +1,9 @@
 // Тест singlefunc1:
 // Сложная функция с относительно произвольным форматированием и разнообразием операторов.
+// - both single-line and multi-line comments
+// - do-while
+// - casts
+// - pointer variables
 
 unsigned char detect_cpus(unsigned char* rsdt, unsigned char* lapic_ids, unsigned char* bsp_lapic_id)
 {
@@ -37,6 +41,13 @@ unsigned char detect_cpus(unsigned char* rsdt, unsigned char* lapic_ids, unsigne
 			break;
 		}
 	}
+
+	do
+	{
+		init_core(core_num);
+		kprintf("\tInitialized core number %lu", core_num--);
+	}
+	while(core_num > 0);
 
 	// get "initial APIC ID" (BSP APIC ID)
 	unsigned eax, ebx, ecx, edx;

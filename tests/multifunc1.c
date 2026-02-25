@@ -1,15 +1,24 @@
 // Тест multifunc1:
-// Несколько функций с большим количеством вложенных конструкций, операций декремента
+// Несколько функций с большим количеством вложенных конструкций
+// - implicit int
+// - empty for initializier
+// - goto
+// - labels
+// - casts
+// - pointer variables
 
 unsigned map_alloc(void* vaddr, unsigned long usize, int flags)
 {
 	if(flags & VMEM_FLAG_SIZE_IN_BYTES)
 		usize = (usize + (PAGE_SIZE - 1)) / PAGE_SIZE;
 
+	int err = 0;
 	if(flags & VMEM_FLAG_MAINTAIN_CONTINUITY){
 		void* paddr = allocator_alloc_align(usize * PAGE_SIZE, PAGE_SIZE);
-		if(paddr == (void*)-1)
-			return VMEM_ERR_NOSPACE;
+		if(paddr == (void*)-1) {
+			err = VMEM_ERR_NOSPACE;
+			goto cleanup;
+		}
 		for(; usize-- && (unsigned long)paddr % PAGE_SIZE2 > 0 && (unsigned long)vaddr % PAGE_SIZE2 > 0; vaddr += PAGE_SIZE)
 			MAP_PAGE(vaddr, paddr);
 		for(; usize >= PAGE_SIZE2 / PAGE_SIZE; usize -= PAGE_SIZE2 / PAGE_SIZE)
@@ -25,7 +34,10 @@ unsigned map_alloc(void* vaddr, unsigned long usize, int flags)
 		for(; --usize > 0; vaddr += PAGE_SIZE)
 			MAP_PAGE_ALLOC(vaddr);
 	}
-	return 0;
+
+cleanup:
+	free(vaddr);
+	return err;
 }
 
 void* map_phys(void* vaddr, void** paddr, unsigned long int usize, int flags)

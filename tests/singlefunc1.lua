@@ -90,9 +90,9 @@ function TestSingleFunc1:TestBodyDeclaredVariables()
 			and #x.var_type.pointers_ws == 0
 	end, true))
 end
+
 function TestSingleFunc1:TestBodyHasOneForLoop()
-	local for_loops = global_decls[1].value:get_children_of_type(nodes._for)
-	lu.assertEquals(#for_loops, 1)
+	lu.assertEquals(#global_decls[1].value:get_children_of_type(nodes._for), 1)
 end
 function TestSingleFunc1:TestForLoopHead()
 	local main_loop = global_decls[1].value:get_children_of_type(nodes._for)[1]
@@ -118,6 +118,19 @@ function TestSingleFunc1:TestForLoopBody()
 
 	local if_child_for = child_if:get_children_of_type(nodes._for)
 	lu.assertEquals(#if_child_for, 1)
+end
+
+function TestSingleFunc1:TestBodyHasOneDoWhileLoop()
+	lu.assertEquals(#global_decls[1].value:get_children_of_type(nodes.do_while), 1)
+end
+function TestSingleFunc1:TestDoWhileLoopHead()
+	local do_while = global_decls[1].value:get_children_of_type(nodes.do_while)[1]
+	
+	lu.assertEquals(do_while.cond._type, nodes.bin_op)
+	lu.assertEquals(do_while.cond.op, tokens.gt)
+	lu.assertEquals(do_while.cond.value[1]._type, nodes.var)
+	lu.assertEquals(do_while.cond.value[1].value.name, "core_num")
+	lu.assertEquals(do_while.cond.value[2].value, 0)
 end
 
 os.exit(lu.LuaUnit.run())

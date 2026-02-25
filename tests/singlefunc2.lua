@@ -32,13 +32,12 @@ function TestSingleFunc2:TestParams()
 	lu.assertEquals(#params[1].var_type.pointers_ws, 1)
 	lu.assertEquals(params[1].value[1].value.name, "q")
 end
-
 function TestSingleFunc2:TestBodyIsBraces()
 	lu.assertEquals(global_decls[1].value._type, nodes.braces)
 end
+
 function TestSingleFunc2:TestBodyHasOneForLoop()
-	local for_loops = global_decls[1].value:get_children_of_type(nodes._for)
-	lu.assertEquals(#for_loops, 1)
+	lu.assertEquals(#global_decls[1].value:get_children_of_type(nodes._for), 1)
 end
 function TestSingleFunc2:TestForLoopHead()
 	local main_loop = global_decls[1].value:get_children_of_type(nodes._for)[1]
@@ -113,5 +112,49 @@ function TestSingleFunc2:TestInnerForLoopBody()
 	end, true))
 end
 
+function TestSingleFunc2:TestBodyHasOneSwitch()
+	lu.assertEquals(#global_decls[1].value:get_children_of_type(nodes.switch), 1)
+end
+function TestSingleFunc2:TestInnerSwitchValue()
+	local switch = global_decls[1].value:get_children_of_type(nodes.switch)[1]
+	lu.assertEquals(switch.value._type, nodes.bin_op)
+	lu.assertEquals(switch.value.op, tokens.member_ptr)
+	lu.assertEquals(switch.value.value[1]._type, nodes.var)
+	lu.assertEquals(switch.value.value[1].value.name, "q")
+	lu.assertEquals(switch.value.value[2]._type, nodes.var)
+	lu.assertEquals(switch.value.value[2].value.name, "alloc_type")
+end
+function TestSingleFunc2:TestInnerSwitchCases()
+	local switch = global_decls[1].value:get_children_of_type(nodes.switch)[1]
+	lu.assertEquals(#switch.cases, 3)
+
+	lu.assertEquals(switch.cases[1].value._type, nodes.var)
+	lu.assertEquals(switch.cases[1].value.value.name, "ALLOC_INC")
+	lu.assertEquals(#switch.cases[1].statements, 3)
+	lu.assertEquals(switch.cases[1].statements[1]._type, nodes._if)
+	lu.assertEquals(switch.cases[1].statements[2]._type, nodes.var)
+	lu.assertEquals(switch.cases[1].statements[2].value.name, "break")
+	lu.assertEquals(switch.cases[1].statements[3]._type, nodes.semicolon)
+
+	lu.assertEquals(switch.cases[2].value._type, nodes.var)
+	lu.assertEquals(switch.cases[2].value.value.name, "ALLOC_DOUBLE")
+	lu.assertEquals(#switch.cases[2].statements, 1)
+	lu.assertEquals(switch.cases[2].statements[1]._type, nodes.braces)
+	lu.assertEquals(#switch.cases[2].statements[1].value, 5)
+	lu.assertTrue(is_node_assign_decl(switch.cases[2].statements[1].value[1]))
+	lu.assertEquals(switch.cases[2].statements[1].value[2]._type, nodes.semicolon)
+	lu.assertEquals(switch.cases[2].statements[1].value[3]._type, nodes._if)
+	lu.assertEquals(switch.cases[2].statements[1].value[4]._type, nodes.var)
+	lu.assertEquals(switch.cases[2].statements[1].value[4].value.name, "break")
+	lu.assertEquals(switch.cases[2].statements[1].value[5]._type, nodes.semicolon)
+
+	lu.assertNil(switch.cases[3].value) -- default
+	lu.assertEquals(#switch.cases[3].statements, 4)
+	lu.assertEquals(switch.cases[3].statements[1]._type, nodes.call)
+	lu.assertEquals(switch.cases[3].statements[2]._type, nodes.semicolon)
+	lu.assertEquals(switch.cases[3].statements[3]._type, nodes.var)
+	lu.assertEquals(switch.cases[3].statements[3].value.name, "break")
+	lu.assertEquals(switch.cases[3].statements[4]._type, nodes.semicolon)
+end
 
 os.exit(lu.LuaUnit.run())

@@ -61,8 +61,6 @@ function test_src()
 		i = i + 1
 	end
 	src_nocomment = src_nocomment .. src:sub(beg_i, i - 1)
-	print("SRC_NOCOMMENT\n" .. trim(src_nocomment))
-	print("DECL_SRC\n" .. trim(decl_src))
 
 	return trim(src_nocomment) == trim(decl_src)
 end

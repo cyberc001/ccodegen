@@ -122,7 +122,7 @@ function TestMultiFunc1:TestBodiesAreBraces()
 	end
 end
 
-function TestMultiFunc1:TestBodiesIfAndForCount()
+function TestMultiFunc1:TestBodyContents()
 	local bodies = {}
 	for _, v in ipairs(global_decls) do
 		table.insert(bodies, v.value)
@@ -132,16 +132,30 @@ function TestMultiFunc1:TestBodiesIfAndForCount()
 	lu.assertEquals(if_count, 3)
 	local for_count = #bodies[1]:get_children_of_type(nodes._for, true)
 	lu.assertEquals(for_count, 6)
+	local func_decls = bodies[1]:get_children_of_type(nodes.decl, true)
+	lu.assertTrue(is_node_assign_decl(func_decls[1]))
+	lu.assertEquals(func_decls[1].value[1].value[1].value.name, "err")
+	lu.assertEquals(func_decls[1].value[1].value[2].value, 0)
+	local func_gotos = bodies[1]:get_children_of_type(nodes._goto, true)
+	lu.assertEquals(#func_gotos, 1)
+	lu.assertEquals(func_gotos[1].value, "cleanup")
+	local func_labels = bodies[1]:get_children_of_type(nodes.label, true)
+	lu.assertEquals(#func_labels, 1)
+	lu.assertEquals(func_labels[1].value, "cleanup")
 
 	if_count = #bodies[2]:get_children_of_type(nodes._if, true)
 	lu.assertEquals(if_count, 1)
 	for_count = #bodies[2]:get_children_of_type(nodes._for, true)
 	lu.assertEquals(for_count, 3)
+	local decl_count = #bodies[2]:get_children_of_type(nodes.decl, true)
+	lu.assertEquals(decl_count, 0)
 
 	if_count = #bodies[3]:get_children_of_type(nodes._if, true)
 	lu.assertEquals(if_count, 1)
 	for_count = #bodies[3]:get_children_of_type(nodes._for, true)
 	lu.assertEquals(for_count, 3)
+	decl_count = #bodies[3]:get_children_of_type(nodes.decl, true)
+	lu.assertEquals(decl_count, 0)
 end
 
 function TestMultiFunc1:TestForLoopHeads()
