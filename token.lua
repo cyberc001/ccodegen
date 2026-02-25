@@ -80,6 +80,8 @@ function token_to_str(token)
 	if token == tokens.dec then return '--' end
 	if token == tokens.brack then return '[' end
 
+	if token == tokens.id then return 'identifier' end
+
 	return tostring(token)
 end
 

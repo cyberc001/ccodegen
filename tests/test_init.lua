@@ -17,6 +17,13 @@ function init_test_decls(file_name)
 	global_decls = {}
 	while true do
 		global_node, ctx = global_decl(src, ctx)
+		if type(global_node) == "string" then
+			global_decls = {
+				error = global_node,
+				ctx = ctx
+			}
+			break
+		end
 		table.insert(global_decls, global_node)
 		if ctx.i == nil then break end
 		ctx = next_token(src, ctx)

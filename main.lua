@@ -22,6 +22,10 @@ ctx = next_token(src, ctx)
 local global_decls = {}
 while true do
 	global_node, ctx = global_decl(src, ctx)
+	if type(global_node) == "string" then
+		print("Error on line " .. ctx.line .. ":\n" .. global_node)
+		os.exit(1)
+	end
 	table.insert(global_decls, global_node)
 	if ctx.i == nil then break end
 	ctx = next_token(src, ctx)

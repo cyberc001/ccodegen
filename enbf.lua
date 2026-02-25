@@ -573,8 +573,7 @@ function expression(level, src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. ctx.line .. ": unexpected EOF of expression")
-		os.exit(1)
+		return "unexpected EOF of expression", ctx
 	end
 
 	-- временные локальные переменные
@@ -602,8 +601,7 @@ function expression(level, src, ctx, dbg)
 
 		if ctx.token == '(' then -- вызов функции
 			if #id.mods > 0 then
-				print("line " .. ctx.line .. ": invalid function identifier (has modifiers)")
-				os.exit(1)
+				return "invalid function identifier (has modifiers)", ctx
 			end
 			local args = {}
 			local ws_after_name = ctx.ws
@@ -616,6 +614,9 @@ function expression(level, src, ctx, dbg)
 					arg_ws_before = ""
 				end
 				rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+				if type(rnode) == "string" then
+					return rnode, ctx
+				end
 				rnode.ws_before = rnode.ws_before .. arg_ws_before
 				rnode.ws_after = rnode.ws_after .. ctx.ws
 				table.insert(args, rnode)
@@ -655,19 +656,23 @@ function expression(level, src, ctx, dbg)
 			end
 
 			if ctx.token ~= ')' then
-				print("line " .. ctx.line .. ": expected ')' in type cast")
-				os.exit(1)
+				return "expected ')' in type cast", ctx
 			end
 
 			ctx = next_token(src, ctx) -- пропуск ')'
 			rnode, ctx = expression(tokens.inc, src, ctx, dbg .. "\t")
+			if type(rnode) == "string" then
+				return rnode, ctx
+			end
 			unit_node = node:new_cast(cast_type, rnode)
 		else -- скобки ()
 			local ws_before_value = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+			if type(rnode) == "string" then
+				return rnode, ctx
+			end
 			if ctx.token ~= ')' then
-				print("line " .. ctx.line .. ": expected ')' in parantheses")
-				os.exit(1)
+				return "expected ')' in parantheses", ctx
 			end
 			ctx = next_token(src, ctx) -- пропуск ')'
 			rnode.ws_before = rnode.ws_before .. ws_before_value
@@ -677,6 +682,9 @@ function expression(level, src, ctx, dbg)
 		local op = ctx.token
 		ctx = next_token(src, ctx)
 		rnode, ctx = expression(tokens.inc, src, ctx, dbg .. "\t")
+		if type(rnode) == "string" then
+			return rnode, ctx
+		end
 		unit_node = node:new_un_op(op, rnode)
 	elseif ctx.token == tokens.sub then -- отдельный случай с отрицательными числами
 		ctx = next_token(src, ctx)
@@ -686,6 +694,9 @@ function expression(level, src, ctx, dbg)
 			ctx = next_token(src, ctx)
 		else
 			rnode, ctx = expression(tokens.inc, src, ctx, dbg .. "\t")
+			if type(rnode) == "string" then
+				return rnode, ctx
+			end
 			unit_node = node:new_un_op(tokens.sub, rnode)
 		end
 	elseif ctx.token == '{' then -- list-initializer
@@ -694,13 +705,15 @@ function expression(level, src, ctx, dbg)
 		while ctx.token ~= '}' do
 			local ws_before = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+			if type(rnode) == "string" then
+				return rnode, ctx
+			end
 			rnode.ws_before = ws_before
 			table.insert(values, rnode)
 			if ctx.token == ',' then
 				ctx = next_token(src, ctx)
 			elseif ctx.token ~= '}' then
-				print("line " .. ctx.line .. ": expected '}' to end a list-initializer")
-				os.exit(1)
+				return "expected '}' to end a list-initializer", ctx
 			end
 		end
 		if #values > 0 then
@@ -724,6 +737,9 @@ function expression(level, src, ctx, dbg)
 
 			local ws_before_op2 = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+			if type(rnode) == "string" then
+				return rnode, ctx
+			end
 			rnode.ws_before = rnode.ws_before .. ws_before_op2
 			unit_node = node:new_bin_op(tokens.assign, unit_node, rnode)
 		elseif ctx.token == tokens.cond then
@@ -732,13 +748,14 @@ function expression(level, src, ctx, dbg)
 
 			local ws_before_first_operand = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+			if type(rnode) == "string" then
+				return rnode, ctx
+			end
 			if ctx.token ~= ':' then
-				print("line " .. ctx.line .. ": expected ':' in conditional operator")
-				os.exit(1)
+				return "expected ':' in conditional operator", ctx
 			end
 			if not rnode then
-				print("line " .. ctx.line .. ": conditional operator has no 2nd operand")
-				os.exit(1)
+				return "conditional operator has no 2nd operand", ctx
 			end
 			rnode.ws_before = ws_before_first_operand
 			rnode.ws_after = ctx.ws
@@ -746,12 +763,14 @@ function expression(level, src, ctx, dbg)
 			ctx = next_token(src, ctx) -- пропуск ':'
 			local ws_before_second_operand = ctx.ws
 			rnode2, ctx = expression(tokens.cond, src, ctx, dbg .. "\t")
+			if type(rnode2) == "string" then
+				return rnode2, ctx
+			end
 			rnode2.ws_before = ws_before_second_operand
 			unit_node = node:new_cond(unit_node, rnode, rnode2)
 		elseif is_token_binary_op(ctx.token) then
 			if not unit_node then
-				print("line " .. ctx.line .. ": operator '" .. token_to_str(ctx.token) .. "' does not have 1st operand")
-				os.exit(1)
+				return "operator '" .. token_to_str(ctx.token) .. "' does not have 1st operand", ctx
 			end
 			unit_node.ws_after = unit_node.ws_after .. ctx.ws
 			local op = ctx.token
@@ -759,9 +778,11 @@ function expression(level, src, ctx, dbg)
 			local ws_before_op2 = ctx.ws
 
 			rnode, ctx = expression(op + 1, src, ctx, dbg .. "\t")
+			if type(rnode) == "string" then
+				return rnode, ctx
+			end
 			if not rnode then
-				print("line " .. ctx.line .. ": expected a second operand for binary operator '" .. token_to_str(op) .."'")
-				os.exit(1)
+				return "expected a second operand for binary operator '" .. token_to_str(op) .."'", ctx
 			end
 			rnode.ws_before = rnode.ws_before .. ws_before_op2
 			unit_node = node:new_bin_op(op, unit_node, rnode)
@@ -772,9 +793,11 @@ function expression(level, src, ctx, dbg)
 			ctx = next_token(src, ctx)
 			local ws_before_idx = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+			if type(rnode) == "string" then
+				return rnode, ctx
+			end
 			if ctx.token ~= ']' then
-				print("line " .. ctx.line .. ": expected ']' to close indexing operator")
-				os.exit(1)
+				return "expected ']' to close indexing operator", ctx
 			end
 			rnode.ws_after = rnode.ws_after .. ctx.ws
 
@@ -782,8 +805,7 @@ function expression(level, src, ctx, dbg)
 			rnode.ws_before = rnode.ws_before .. ws_before_idx
 			unit_node = node:new_index(unit_node, rnode)
 		else
-			print("line " .. ctx.line .. ": unexpected end of expression")
-			os.exit(1)
+			return "unexpected end of expression", ctx
 		end
 		if enbf_debug then print(dbg .. "going next") end
 	end
@@ -796,8 +818,7 @@ function statement(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. ctx.line .. ": unexpected EOF of statement")
-		os.exit(1)
+		return "unexpected EOF of statement", ctx
 	end
 
 	-- временные локальные переменные
@@ -814,6 +835,9 @@ function statement(src, ctx, dbg)
 			if ctx.token == '{' then
 				local ws_after_type = ctx.ws
 				type_id, ctx = compound_decl(src, ctx, dbg .. "\t")
+				if type(type_id) == "string" then
+					return type_id, ctx
+				end
 				type_id.ws_after_type = ws_after_type
 				type_id.name = name_token
 			else
@@ -837,8 +861,7 @@ function statement(src, ctx, dbg)
 
 		if ctx.token ~= tokens.id then
 			if ctx.token ~= ';' or not type_id then 
-				print("line " .. ctx.line .. ": expected variable or function name in global declaration, got " .. token_to_str(ctx.token))
-				os.exit(1)
+				return "expected variable or function name in global declaration, got " .. token_to_str(ctx.token), ctx
 			end
 			-- объявление структуры без имени переменной
 			return type_id, ctx
@@ -860,9 +883,11 @@ function statement(src, ctx, dbg)
 				ctx = next_token(src, ctx)
 				local ws_before_idx = ctx.ws
 				rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+				if type(rnode) == "string" then
+					return rnode, ctx
+				end
 				if ctx.token ~= ']' then
-					print("line " .. ctx.line .. ": expected ']' to close indexing operator")
-					os.exit(1)
+					return "expected ']' to close indexing operator", ctx
 				end
 
 				local ws_before_closing_bracket = ctx.ws
@@ -883,6 +908,9 @@ function statement(src, ctx, dbg)
 	
 				local ws_after_assign = ctx.ws
 				rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+				if type(rnode) == "string" then
+					return rnode, ctx
+				end
 				rnode.ws_before = ws_after_assign
 				local assign_op = node:new_bin_op(tokens.assign, decl, rnode)
 				table.insert(vars, assign_op)
@@ -899,6 +927,9 @@ function statement(src, ctx, dbg)
 
 		if ctx.token == '(' then -- объявление функции
 			rnode, ctx = func_decl(src, ctx, dbg .. "\t")
+			if type(rnode) == "string" then
+				return rnode, ctx
+			end
 			rnode.ws_after_return_type = vars[1].ws_before
 			rnode.id = vars[1].value
 			rnode.return_type = type_id
@@ -906,8 +937,7 @@ function statement(src, ctx, dbg)
 		end
 		-- объявление переменной (переменных)	
 		if ctx.token ~= ';' then
-			print("line " .. ctx.line .. ": expected ';' after variable declaration, got " .. token_to_str(ctx.token))
-			os.exit(1)
+			return "expected ';' after variable declaration, got " .. token_to_str(ctx.token), ctx
 		end
 		if #vars > 0 then
 			vars[#vars].ws_after = "" -- избегаем дублирования с ws_after самого утверждения
@@ -923,20 +953,24 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx)
 		local ws_after_if = ctx.ws
 		if ctx.token ~= '(' then
-			print("line " .. ctx.line .. ": expected '(' after 'if'")
-			os.exit(1)
+			return "expected '(' after 'if'", ctx
 		end
 		ctx = next_token(src, ctx)
 		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+		if type(rnode) == "string" then
+			return rnode, ctx
+		end
 		local cond = rnode
 		if ctx.token ~= ')' then
-			print("line " .. ctx.line .. ": expected ')' after if condition")
-			os.exit(1)
+			return "expected ')' after if condition", ctx
 		end
 		ctx = next_token(src, ctx) -- пропуск ')'
 		
 		local ws_before_body = rnode.ws_after .. ctx.ws
 		rnode, ctx = statement(src, ctx, dbg .. "\t")
+		if type(rnode) == "string" then
+			return rnode, ctx
+		end
 		rnode.ws_before = rnode.ws_before .. ws_before_body
 		if ctx.token == ';' then
 			rnode.ws_after = ctx.ws .. ';'
@@ -947,6 +981,9 @@ function statement(src, ctx, dbg)
 			ctx = next_token(src, ctx) -- пропуск ')'
 			local ws_before_else = ctx.ws
 			rnode2, ctx = statement(src, ctx, dbg .. "\t")
+			if type(rnode2) == "string" then
+				return rnode, ctx
+			end
 			rnode2.ws_before = rnode2.ws_before .. ws_before_else
 		end
 
@@ -957,22 +994,26 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx)
 		local ws_after_while = ctx.ws
 		if ctx.token ~= '(' then
-			print("line " .. ctx.line .. ": expected '(' after 'while'")
-			os.exit(1)
+			return "expected '(' after 'while'", ctx
 		end
 		ctx = next_token(src, ctx)
 
 		local ws_before_cond = ctx.ws
 		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+		if type(rnode) == "string" then
+			return rnode, ctx
+		end
 		rnode.ws_before = ws_before_cond
 		rnode.ws_after = ctx.ws
 		if ctx.token ~= ')' then
-			print("line " .. ctx.line .. ": expected ')' after while condition")
-			os.exit(1)
+			return "expected ')' after while condition", ctx
 		end
 		ctx = next_token(src, ctx) -- пропуск ')'
 		local ws_before_body = ctx.ws
 		rnode2, ctx = statement(src, ctx, dbg .. "\t")
+		if type(rnode2) == "string" then
+			return rnode2, ctx
+		end
 
 		local res = node:new_while(rnode, rnode2)
 		res.ws_after_while = ws_after_while
@@ -982,8 +1023,7 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx)
 		local ws_after_for = ctx.ws
 		if ctx.token ~= '(' then
-			print("line " .. ctx.line .. ": expected '(' after 'for'")
-			os.exit(1)
+			return "expected '(' after 'for'", ctx
 		end
 
 		local res = node:new_for(nil, nil, nil, rnode2)
@@ -991,11 +1031,13 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx) -- пропуск '('
 		local ws_before = ctx.ws
 		res.begin, ctx = statement(src, ctx, dbg .. "\t")
+		if type(res.begin) == "string" then
+			return res.begin, ctx
+		end
 		res.begin.ws_before = ws_before
 		res.begin.ws_after = ctx.ws
 		if ctx.token ~= ';' and res.begin._type ~= nodes.semicolon then
-			print("line " .. ctx.line .. ": expected ';' after beginning statement of 'for' loop, got " .. token_to_str(ctx.token))
-			os.exit(1)
+			return "expected ';' after beginning statement of 'for' loop, got " .. token_to_str(ctx.token), ctx
 		end
 		if res.begin._type ~= nodes.semicolon then
 			ctx = next_token(src, ctx) -- пропуск ';'
@@ -1005,11 +1047,13 @@ function statement(src, ctx, dbg)
 		end
 
 		res.cond, ctx = statement(src, ctx, dbg .. "\t")
+		if type(res.cond) == "string" then
+			return res.cond, ctx
+		end
 		res.cond.ws_before = ws_before
 		res.cond.ws_after = ctx.ws
 		if ctx.token ~= ';' and res.cond._type ~= nodes.semicolon then
-			print("line " .. ctx.line .. ": expected ';' after conditional statement of 'for' loop, got " .. token_to_str(ctx.token))
-			os.exit(1)
+			return "expected ';' after conditional statement of 'for' loop, got " .. token_to_str(ctx.token), ctx
 		end
 
 		if res.cond._type ~= nodes.semicolon then
@@ -1019,6 +1063,9 @@ function statement(src, ctx, dbg)
 			ws_before = ""
 		end
 		res.iter, ctx = statement(src, ctx, dbg .. "\t")
+		if type(res.iter) == "string" then
+			return res.iter, ctx
+		end
 		if res.iter then
 			res.iter.ws_before = ws_before
 			res.iter.ws_after = ctx.ws
@@ -1026,13 +1073,15 @@ function statement(src, ctx, dbg)
 			res.cond.ws_after = res.cond.ws_after .. ws_before .. ctx.ws
 		end
 		if ctx.token ~= ')' then
-			print("line " .. ctx.line .. ": expected ')' after iterating statement of 'for' loop")
-			os.exit(1)
+			return "expected ')' after iterating statement of 'for' loop", ctx
 		end
 
 		ctx = next_token(src, ctx) -- пропуск ')'
 		local ws_before_body = ctx.ws
 		res.value, ctx = statement(src, ctx, dbg .. "\t")
+		if type(res.value) == "string" then
+			return res.value, ctx
+		end
 
 		res.ws_after_for = ws_after_for
 		res.ws_before_body = ws_before_body
@@ -1041,22 +1090,22 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx) -- пропуск 'switch'
 		local ws_after_switch = ctx.ws
 		if ctx.token ~= '(' then
-			print("line " .. ctx.line .. ": expected '(' after 'switch'")
-			os.exit(1)
+			return "expected '(' after 'switch'", ctx
 		end
 
 		ctx = next_token(src, ctx) -- пропуск '('
 		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+		if type(rnode) == "string" then
+			return rnode, ctx
+		end
 		local cond = rnode
 		if ctx.token ~= ')' then
-			print("line " .. ctx.line .. ": expected ')' after switch condition")
-			os.exit(1)
+			return "expected ')' after switch condition", ctx
 		end
 		local ws_after_cond = ctx.ws
 		ctx = next_token(src, ctx) -- пропуск ')'
 		if ctx.token ~= '{' then
-			print("line " .. ctx.line .. ": expected '{' after switch condition")
-			os.exit(1)
+			return "expected '{' after switch condition", ctx
 		end
 		ctx = next_token(src, ctx) -- пропуск '{'
 
@@ -1069,10 +1118,12 @@ function statement(src, ctx, dbg)
 				local ws_before_val = ctx.ws
 				if not is_default then
 					new_case.value, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+					if type(new_case.value) == "string" then
+						return rnode, ctx
+					end
 				end
 				if ctx.token ~= ':' then
-					print("line " .. ctx.line .. ": expected ':' after switch label")
-					os.exit(1)
+					return "expected ':' after switch label", ctx
 				end
 				if not is_default then
 					new_case.value.ws_before = ws_before_val
@@ -1084,12 +1135,14 @@ function statement(src, ctx, dbg)
 				table.insert(cases, new_case)
 			else
 				if #cases == 0 then
-					print("line " .. ctx.line .. ": statement should be preceeded by a case label")
-					os.exit(1)
+					return "statement should be preceeded by a case label", ctx
 				end
 
 				local ws_before_statement = ctx.ws
 				rnode, ctx = statement(src, ctx, dbg .. "\t")
+				if type(rnode) == "string" then
+					return rnode, ctx
+				end
 				rnode.ws_before = ws_before_statement
 				table.insert(cases[#cases].statements, rnode)
 			end
@@ -1106,14 +1159,12 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx) -- пропуск 'typedef'
 		local ws_after_typedef = ctx.ws
 		if ctx.token ~= tokens.id or not is_id_token_a_type(ctx.token_value) then
-			print("line " .. ctx.line .. ": expected type identifier after 'typedef'")
-			os.exit(1)
+			return "expected type identifier after 'typedef'", ctx
 		end
 		local var_type = ctx.token_value
 		ctx = next_token(src, ctx)
 		if ctx.token ~= tokens.id or is_id_token_a_type(ctx.token_value) then
-			print("line " .. ctx.line .. ": expected type name after typedef type identifier")
-			os.exit(1)
+			return "expected type name after typedef type identifier", ctx
 		end
 		local var = node:new_var(ctx.token_value)
 		var.ws_before = ctx.ws
@@ -1122,8 +1173,7 @@ function statement(src, ctx, dbg)
 
 		ctx = next_token(src, ctx)
 		if identifiers[var.value.name] ~= nil then
-			print("line " .. ctx.line .. ": redefinition of type '" .. var.value.name .. "'")
-			os.exit(1)
+			return "redefinition of type '" .. var.value.name .. "'", ctx
 		end
 		identifiers[var.value.name] = { class = classes._type }
 		return res, ctx
@@ -1138,12 +1188,14 @@ function statement(src, ctx, dbg)
 			end
 
 			rnode, ctx = statement(src, ctx, dbg .. "\t")
+			if type(rnode) == "string" then
+				return rnode, ctx
+			end
 			if rnode == nil then -- ';'
 				statements[#statements].ws_after = statements[#statements].ws_after .. ';'
 			end
 			if ctx.token == nil then
-				print("line " .. ctx.line .. ": curly brace '{' was never closed")
-				os.exit(1)
+				return "curly brace '{' was never closed", ctx
 			end
 			table.insert(statements, rnode)
 		end
@@ -1161,6 +1213,9 @@ function statement(src, ctx, dbg)
 		ctx = next_token(src, ctx)
 		local ws_after_do = ctx.ws
 		rnode, ctx = statement(src, ctx, dbg .. "\t")
+		if type(rnode) == "string" then
+			return rnode, ctx
+		end
 
 		local ws_after_body = ctx.ws
 		if ctx.token == ';' then
@@ -1168,31 +1223,30 @@ function statement(src, ctx, dbg)
 			ws_after_body = ';' .. ctx.ws
 		end
 		if ctx.token ~= tokens.id or ctx.token_value.name ~= "while" then
-			print("line " .. ctx.line .. ": expected 'while' after 'do' body, got " .. token_to_str(ctx.token))
-			os.exit(1)
+			return "expected 'while' after 'do' body, got " .. token_to_str(ctx.token), ctx
 		end
 
 		ctx = next_token(src, ctx)
 		local ws_after_while = ctx.ws
 		if ctx.token ~= '(' then
-			print("line " .. ctx.line .. ": expected '(' after 'while'")
-			os.exit(1)
+			return "expected '(' after 'while'", ctx
 		end
 		ctx = next_token(src, ctx) -- пропуск '('
 		
 		local ws_before_cond = ctx.ws
 		rnode2, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+		if type(rnode2) == "string" then
+			return rnode2, ctx
+		end
 		rnode2.ws_before = ws_before_cond
 		rnode2.ws_after = ctx.ws
 		if ctx.token ~= ')' then
-			print("line " .. ctx.line .. ": expected ')' after do while condition")
-			os.exit(1)
+			return "expected ')' after do while condition", ctx
 		end
 
 		ctx = next_token(src, ctx) -- пропуск ')'
 		if ctx.token ~= ';' then
-			print("line " .. ctx.line .. ": expected ';' after do while condition")
-			os.exit(1)
+			return "expected ';' after do while condition", ctx
 		end
 
 		local res = node:new_do_while(rnode2, rnode)
@@ -1203,8 +1257,7 @@ function statement(src, ctx, dbg)
 	elseif ctx.token == tokens.id and ctx.token_value.name == "goto" then
 		ctx = next_token(src, ctx)
 		if ctx.token ~= tokens.id or is_id_token_a_type(ctx.token_value) then
-			print("line " .. ctx.line .. ": expected an identifier after 'goto'")
-			os.exit(1)
+			return "expected an identifier after 'goto'", ctx
 		end
 		local label_name = ctx.token_value.name
 		local ws_after_goto = ctx.ws
@@ -1219,12 +1272,14 @@ function statement(src, ctx, dbg)
 		if ctx.token ~= ';' then
 			local ws_before = ctx.ws
 			rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+			if type(rnode) == "string" then
+				return rnode, ctx
+			end
 			rnode.ws_before = ws_before
 		end
 		rnode = node:new_return(rnode)
 		if ctx.token ~= ';' then
-			print("line " .. ctx.line .. ": expected ';' after 'return', got " .. token_to_str(ctx.token))
-			os.exit(1)
+			return "expected ';' after 'return', got " .. token_to_str(ctx.token), ctx
 		end
 		rnode.ws_after = ctx.ws .. ';'
 
@@ -1235,10 +1290,12 @@ function statement(src, ctx, dbg)
 		return node:new_semicolon(), ctx
 	else -- присваивание или вызов функции
 		rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
+		if type(rnode) == "string" then
+			return rnode, ctx
+		end
 		if ctx.token == ':' then -- метка
 			if not rnode or rnode._type ~= nodes.var then
-				print("line " .. ctx.line .. ": expected a label name")
-				os.exit(1)
+				return "expected a label name", ctx
 			end
 			local ws_after_name = ctx.ws
 			ctx = next_token(src, ctx) -- пропуск ':'
@@ -1247,8 +1304,7 @@ function statement(src, ctx, dbg)
 			return res, ctx
 		end
 		if ctx.token ~= ';' and ctx.token ~= ')' then
-			print("line " .. ctx.line .. ": expected ';' or ')' after expression-statement, got " .. token_to_str(ctx.token))
-			os.exit(1)
+			return "expected ';' or ')' after expression-statement, got " .. token_to_str(ctx.token), ctx
 		end
 		return rnode, ctx
 	end
@@ -1258,8 +1314,7 @@ function enum_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. ctx.line .. ": unexpected EOF of enum declaration")
-		os.exit(1)
+		return "unexpected EOF of enum declaration", ctx
 	end
 
 	-- временные локальные переменные
@@ -1269,13 +1324,11 @@ function enum_decl(src, ctx, dbg)
 	if enbf_debug then print(dbg .. "enum, decl", ctx.token, ctx.token_value) end
 	while ctx.token ~= '}' do
 		if ctx.token ~= tokens.id then
-			print("line " .. ctx.line .. ": expected an identifier for enum declaration")
-			os.exit(1)
+			return "expected an identifier for enum declaration", ctx
 		end
 		local id = ctx.token_value.name
 		if identifiers[id] and identifiers[id].class then
-			print("line " .. ctx.line .. ": attempting to re-define enum '" .. id .. "'")
-			os.exit(1)
+			return "attempting to re-define enum '" .. id .. "'", ctx
 		end
 		local ws_before_var = ctx.ws
 		ctx = next_token(src, ctx)
@@ -1293,8 +1346,7 @@ function enum_decl(src, ctx, dbg)
 				ctx = next_token(src, ctx)
 			end
 			if not is_token_num(ctx.token) then
-				print("line " .. ctx.line .. ": enum should be initialized with a number")
-				os.exit(1)
+				return "enum should be initialized with a number", ctx
 			end
 			if is_minus then
 				ctx.token_value = -ctx.token_value
@@ -1314,8 +1366,7 @@ function enum_decl(src, ctx, dbg)
 
 		identifiers[id] = {class = classes.enum_decl}
 		if ctx.token ~= ',' and ctx.token ~= '}' then
-			print("line " .. ctx.line .. ": expected ',' or '}' after enum declaration")
-			os.exit(1)
+			return "expected ',' or '}' after enum declaration", ctx
 		end
 
 		if ctx.token == ',' then
@@ -1330,8 +1381,7 @@ function func_params(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. ctx.line .. ": unexpected EOF of function parameters")
-		os.exit(1)
+		return "unexpected EOF of function parameters", ctx
 	end
 
 	-- временные локальные переменные
@@ -1341,12 +1391,10 @@ function func_params(src, ctx, dbg)
 	if enbf_debug then print(dbg .. "func params", ctx.token, ctx.token_value) end
 	while ctx.token ~= ')' do
 		if ctx.token ~= tokens.id then
-			print("line " .. ctx.line .. ": expected a type identifier")
-			os.exit(1)
+			return "expected a type identifier", ctx
 		end
 		if not is_id_token_a_type(ctx.token_value) then
-			print("line " .. ctx.line .. ": identifier '" .. tostring(ctx.token_value) .. "' is not a type")
-			os.exit(1)
+			return "identifier '" .. tostring(ctx.token_value) .. "' is not a type", ctx
 		end
 		local ws_before_type = ctx.ws
 		local type_id = ctx.token_value
@@ -1358,8 +1406,7 @@ function func_params(src, ctx, dbg)
 		end
 
 		if ctx.token ~= tokens.id then
-			print("line " .. ctx.line .. ": expected parameter name")
-			os.exit(1)
+			return "expected parameter name", ctx
 		end
 
 		local var = node:new_var(ctx.token_value)
@@ -1381,33 +1428,35 @@ function func_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. ctx.line .. ": unexpected EOF of function declaration")
-		os.exit(1)
+		return "unexpected EOF of function declaration", ctx
 	end
 
 	local params, body
 
 	if enbf_debug then print(dbg .. "func decl", token, token_value) end
 	if ctx.token ~= '(' then
-		print("line " .. ctx.line .. ": expected '(' in function declaration")
-		os.exit(1)
+		return "expected '(' in function declaration", ctx
 	end
 	local ws_before_params = ctx.ws
 	ctx = next_token(src, ctx)
 	params, ctx = func_params(src, ctx, dbg .. "\t")
+	if type(params) == "string" then
+		return params, ctx
+	end
 	params.ws_before = ws_before_params
 	if ctx.token ~= ')' then
-		print("line " .. ctx.line .. ": expected ')' in function declaration")
-		os.exit(1)
+		return "expected ')' in function declaration", ctx
 	end
 	ctx = next_token(src, ctx)
 	local ws_before_body = ctx.ws
 
 	if ctx.token ~= '{' then
-		print("line " .. ctx.line .. ": expected '{' in function declaration")
-		os.exit(1)
+		return "expected '{' in function declaration", ctx
 	end
 	body, ctx = statement(src, ctx, dbg .. "\t")
+	if type(body) == "string" then
+		return body, ctx
+	end
 	body.ws_before = ws_before_body
 	if enbf_debug then print(dbg .. "tokens after body", ctx.token, ctx.token_value) end
 
@@ -1423,8 +1472,7 @@ function compound_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. ctx.line .. ": unexpected EOF of compound declaration")
-		os.exit(1)
+		return "unexpected EOF of compound declaration", ctx
 	end
 
 	if enbf_debug then print(dbg .. "compound decl", ctx.token, ctx.token_value) end
@@ -1435,9 +1483,11 @@ function compound_decl(src, ctx, dbg)
 		local ws_before = ctx.ws
 		local decl
 		decl, ctx = statement(src, ctx, dbg .. "\t")
+		if type(decl) == "string" then
+			return decl, ctx
+		end
 		if ctx.token ~= ';' then
-			print("line " .. ctx.line .. ": expected ';' after a statement inside a compound")
-			os.exit(1)
+			return "expected ';' after a statement inside a compound", ctx
 		end
 		decl.ws_after = ctx.ws .. ';'
 
@@ -1446,8 +1496,7 @@ function compound_decl(src, ctx, dbg)
 		ctx = next_token(src, ctx)
 	end
 	if not ctx.token then
-		print("line " .. ctx.line .. ": unexpected EOF of compound declaration")
-		os.exit(1)
+		return "unexpected EOF of compound declaration", ctx
 	end
 
 	if #decls > 0 then
@@ -1460,13 +1509,11 @@ function compound_decl(src, ctx, dbg)
 end
 
 
-
 function global_decl(src, ctx, dbg)
 	dbg = dbg or ""
 
 	if not ctx.token then
-		print("line " .. ctx.line .. ": unexpected EOF of global declaration")
-		os.exit(1)
+		return "unexpected EOF of global declaration", ctx
 	end
 
 	-- временные локальные переменные
@@ -1481,8 +1528,7 @@ function global_decl(src, ctx, dbg)
 		local enum_id
 		if ctx.token ~= '{' then
 			if ctx.token ~= tokens.id then
-				print("line " .. ctx.line .. ": expected enum identifier in global declaration")
-				os.exit(1)
+				return "expected enum identifier in global declaration", ctx
 			end
 			enum_id = ctx.token_value.name
 			ctx = next_token(src, ctx)
@@ -1492,6 +1538,9 @@ function global_decl(src, ctx, dbg)
 		if ctx.token == '{' then -- тела может и не быть
 			ctx = next_token(src, ctx)
 			rnode, ctx = enum_decl(src, ctx, dbg .. "\t")
+			if type(rnode) == "string" then
+				return rnode, ctx
+			end
 			ctx = next_token(src, ctx) -- пропуск '}'
 			rnode.name = enum_id
 		else
@@ -1509,6 +1558,9 @@ function global_decl(src, ctx, dbg)
 	end
 
 	rnode, ctx = statement(src, ctx, dbg .. "\t")
+	if type(rnode) == "string" then
+		return rnode, ctx
+	end
 	rnode.ws_after = rnode.ws_after .. ctx.ws
 	if ctx.token == ';' then
 		local next_ctx = next_token(src, ctx)
