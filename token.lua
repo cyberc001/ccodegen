@@ -188,6 +188,9 @@ function is_id_token_a_type(token_value)
 	if token_value:has_mod("unsigned") or token_value:has_mod("signed") or token_value:has_mod("short") or token_value:has_mod("long") then
 		return true -- невяно указан тип int
 	end
+	if token_value:has_mod("struct") or token_value:has_mod("union") then
+		return true -- анонимная структура или union
+	end
 	if not token_value.name then
 		return false
 	end

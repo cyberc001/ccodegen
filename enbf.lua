@@ -460,7 +460,7 @@ function node:new_goto(label_name)
 end
 
 function node:new_compound(decls, compound_type, name)
-	return node:new({_type = nodes.compound, value = decls, name = name, ws_after_type = "", ws_after_name = "",
+	return node:new({_type = nodes.compound, value = decls, name = name, ws_after_type = "", ws_after_name = "", ws_before_closing_brace = "",
 	print = function(self)
 		local s = "(compound '" .. (self.name and tostring(self.name) or "") .. "'\n" .. self.dbg .. "\tdeclarations [\n"
 		for _,v in ipairs(self.value) do
@@ -476,7 +476,7 @@ function node:new_compound(decls, compound_type, name)
 				s = s .. v:src()
 			end
 		end
-		return s .. "}"
+		return s .. self.ws_before_closing_brace .. "}"
 	end,
 	get_children = _get_children_array
 	})
@@ -850,23 +850,6 @@ function statement(src, ctx, dbg)
 			ctx = next_token(src, ctx)
 		end
 
-		local insert_pointers_into = type_id._type == nodes.compound
-						and type_id.name.pointers_ws
-						or type_id.pointers_ws
-
-		while ctx.token == tokens.mul do -- пропуск указателей
-			table.insert(insert_pointers_into, ctx.ws)
-			ctx = next_token(src, ctx)
-		end
-
-		if ctx.token ~= tokens.id then
-			if ctx.token ~= ';' or not type_id then 
-				return "expected variable or function name in a statement, got " .. token_to_str(ctx.token), ctx
-			end
-			-- объявление структуры без имени переменной
-			return type_id, ctx
-		end
-
 		local vars = {}
 		while ctx.token == tokens.id or ctx.token == tokens.mul do
 			local pointers_ws = {}
@@ -880,6 +863,7 @@ function statement(src, ctx, dbg)
 			decl.value.pointers_before_name = true
 			decl.value.ws_before_name = ctx.ws
 			ctx = next_token(src, ctx)
+			decl.ws_after = ctx.ws
 
 			if ctx.token == tokens.brack then
 				ctx = next_token(src, ctx)
@@ -1501,13 +1485,17 @@ function compound_decl(src, ctx, dbg)
 		return "unexpected EOF of compound declaration", ctx
 	end
 
+	local comp = node:new_compound(decls)
+
 	if #decls > 0 then
 		decls[#decls].ws_after = decls[#decls].ws_after .. ctx.ws
+	else
+		comp.ws_before_closing_brace = ctx.ws
 	end
 
 	ctx = next_token(src, ctx) -- пропуск '}'
 
-	return node:new_compound(decls), ctx
+	return comp, ctx
 end
 
 
