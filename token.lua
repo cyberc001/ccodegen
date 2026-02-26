@@ -140,10 +140,19 @@ function id:__tostring()
 		s = s .. self.mods_ws[i] .. v
 	end
 	s = s .. self.mods_ws[#self.mods_ws]
-	if self.name then s = s .. self.name end
+
+	if self.name and not self.pointers_before_name then
+		s = s .. (self.ws_before_name and self.ws_before_name or "") .. self.name
+	end
+
 	for _, v in ipairs(self.pointers_ws) do
 		s = s .. v .. "*"
 	end
+
+	if self.name and self.pointers_before_name then
+		s = s .. (self.ws_before_name and self.ws_before_name or "") .. self.name
+	end
+
 	return s
 end
 

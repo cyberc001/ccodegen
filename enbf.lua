@@ -861,23 +861,25 @@ function statement(src, ctx, dbg)
 
 		if ctx.token ~= tokens.id then
 			if ctx.token ~= ';' or not type_id then 
-				return "expected variable or function name in global declaration, got " .. token_to_str(ctx.token), ctx
+				return "expected variable or function name in a statement, got " .. token_to_str(ctx.token), ctx
 			end
 			-- объявление структуры без имени переменной
 			return type_id, ctx
 		end
 
 		local vars = {}
-		while ctx.token == tokens.id do
-			local decl = node:new_var(ctx.token_value)
-			decl.ws_before = ctx.ws
-
-			ctx = next_token(src, ctx)
+		while ctx.token == tokens.id or ctx.token == tokens.mul do
+			local pointers_ws = {}
 			while ctx.token == tokens.mul do -- пропуск указателей
-				table.insert(type_id.pointers_ws, ctx.ws)
+				table.insert(pointers_ws, ctx.ws)
 				ctx = next_token(src, ctx)
 			end
-			decl.ws_after = ctx.ws
+
+			local decl = node:new_var(ctx.token_value)
+			decl.value.pointers_ws = pointers_ws
+			decl.value.pointers_before_name = true
+			decl.value.ws_before_name = ctx.ws
+			ctx = next_token(src, ctx)
 
 			if ctx.token == tokens.brack then
 				ctx = next_token(src, ctx)
