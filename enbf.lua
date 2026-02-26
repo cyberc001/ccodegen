@@ -172,7 +172,9 @@ function node:new_index(x, i)
 	-- ws_before_closing_bracket нужен только в том случае, если self.value[2] == nil (пустые квадратные скобки)
 	return node:new({_type = nodes.index, value = {x, i}, ws_before_brackets = "", ws_before_closing_bracket = "",
 	print = function(self)
-		self.value[1].dbg = self.dbg .. "\t"
+		if self.value[1] then
+			self.value[1].dbg = self.dbg .. "\t"
+		end
 		local value2_prefix = ""
 		if self.value[2] then
 			self.value[2].dbg = self.dbg .. "\t"
@@ -182,7 +184,8 @@ function node:new_index(x, i)
 		return "(index, values\n" .. tostring(self.value[1]) .. ",\n\t" .. value2_prefix .. tostring(self.value[2]) .. "\n" .. self.dbg .. ")"
 	end,
 	_src = function(self)
-		return self.value[1]:src() .. self.ws_before_brackets .. "[" .. (self.value[2] and self.value[2]:src() or self.ws_before_brackets) .. self.ws_before_closing_bracket .. "]"
+		print(self)
+		return (self.value[1] and self.value[1]:src() or "") .. self.ws_before_brackets .. "[" .. (self.value[2] and self.value[2]:src() or self.ws_before_brackets) .. self.ws_before_closing_bracket .. "]"
 	end
 	})
 end
@@ -499,7 +502,7 @@ end
 function node:new_enum_decl(decls, name)
 	return node:new({_type = nodes.enum_decl, value = decls, name = name, ws_after_enum = "", ws_after_name = "",
 	print = function(self)
-		local s = "(enum '" .. (self.name and self.name or "") .. "'\n" .. self.dbg .. "\tdeclarations [\n"
+		local s = "(enum '" .. (self.name and tostring(self.name) or "") .. "'\n" .. self.dbg .. "\tdeclarations [\n"
 		for _,v in ipairs(self.value) do
 			v.dbg = self.dbg .. "\t"
 			s = s ..  tostring(v) .. ",\n"
@@ -552,12 +555,14 @@ function node:new_func(params, body, id, return_type)
 	return node:new({_type = nodes.func, value = body, params = params, id = id, return_type = return_type,
 	ws_after_return_type = "",
 	print = function(self)
-		self.value.dbg = self.dbg .. "\t"
+		if self.value then
+			self.value.dbg = self.dbg .. "\t"
+		end
 		self.params.dbg = self.dbg .. "\t"
 		return "(func '" .. tostring(self.id) .. "', return type " .. tostring(self.return_type) .. "\n" .. self.dbg .. "\tparams\n" .. tostring(self.params) .. "\n" .. self.dbg .. "\tbody\n" .. tostring(self.value) .. "\n" .. self.dbg .. "\t)"
 	end,
 	_src = function(self)
-		return (tostring(self.return_type) or "NORETURNTYPE") .. self.ws_after_return_type .. tostring(self.id) .. self.params:src() .. self.value:src()
+		return (tostring(self.return_type) or "NORETURNTYPE") .. self.ws_after_return_type .. tostring(self.id) .. self.params:src() .. (self.value and self.value:src() or "")
 	end,
 	get_children = function(self)
 		local children = {}
@@ -616,6 +621,9 @@ function expression(level, src, ctx, dbg)
 				rnode, ctx = expression(tokens.assign, src, ctx, dbg .. "\t")
 				if type(rnode) == "string" then
 					return rnode, ctx
+				end
+				if rnode == nil then
+					return "invalid function parameter", ctx
 				end
 				rnode.ws_before = rnode.ws_before .. arg_ws_before
 				rnode.ws_after = rnode.ws_after .. ctx.ws
@@ -810,7 +818,7 @@ function expression(level, src, ctx, dbg)
 		if enbf_debug then print(dbg .. "going next") end
 	end
 
-	if enbf_debug then print(dbg .. "expression returning", ctx.token, ctx.token_value) end
+	if enbf_debug then print(dbg .. "expression returning", ctx.token, ctx.token_value, ctx.i) end
 	return unit_node, ctx
 end
 
@@ -834,7 +842,20 @@ function statement(src, ctx, dbg)
 			ctx = next_token(src, ctx)
 			if ctx.token == '{' then
 				local ws_after_type = ctx.ws
-				type_id, ctx = compound_decl(src, ctx, dbg .. "\t")
+				if name_token:has_mod("enum") then
+					local res
+					res, ctx = enum_decl(src, ctx, dbg .. "\t")
+					if type(res) == "string" then
+						return res, ctx
+					end
+					if name_token.name then
+						res.name = name_token.mods_ws[2] .. name_token.name
+					end
+					res.ws_after_name = ws_after_type
+					return res, ctx
+				else
+					type_id, ctx = compound_decl(src, ctx, dbg .. "\t")
+				end
 				if type(type_id) == "string" then
 					return type_id, ctx
 				end
@@ -847,6 +868,15 @@ function statement(src, ctx, dbg)
 
 		if not type_id then -- обычный тип данных
 			type_id = ctx.token_value
+			ctx = next_token(src, ctx)
+		end
+
+		local insert_pointers_into = type_id._type == nodes.compound
+						and type_id.name.pointers_ws
+						or type_id.pointers_ws
+
+		while ctx.token == tokens.mul do -- пропуск указателей
+			table.insert(insert_pointers_into, ctx.ws)
 			ctx = next_token(src, ctx)
 		end
 
@@ -968,7 +998,7 @@ function statement(src, ctx, dbg)
 			local ws_before_else = ctx.ws
 			rnode2, ctx = statement(src, ctx, dbg .. "\t")
 			if type(rnode2) == "string" then
-				return rnode, ctx
+				return rnode2, ctx
 			end
 			rnode2.ws_before = rnode2.ws_before .. ws_before_else
 		end
@@ -1306,8 +1336,10 @@ function enum_decl(src, ctx, dbg)
 	-- временные локальные переменные
 	local rnode
 
+	if enbf_debug then print(dbg .. "enum decl", ctx.token, ctx.token_value) end
+
 	local decls = {}
-	if enbf_debug then print(dbg .. "enum, decl", ctx.token, ctx.token_value) end
+	ctx = next_token(src, ctx) -- пропуск '{'
 	while ctx.token ~= '}' do
 		if ctx.token ~= tokens.id then
 			return "expected an identifier for enum declaration", ctx
@@ -1360,6 +1392,8 @@ function enum_decl(src, ctx, dbg)
 		end
 	end
 
+	ctx = next_token(src, ctx) -- пропуск '}'
+
 	return node:new_enum_decl(decls), ctx
 end
 
@@ -1391,15 +1425,14 @@ function func_params(src, ctx, dbg)
 			ctx = next_token(src, ctx)
 		end
 
-		if ctx.token ~= tokens.id then
-			return "expected parameter name", ctx
+		local var
+		if ctx.token == tokens.id then
+			var = node:new_var(ctx.token_value)
+			var.ws_before = ctx.ws
+			ctx = next_token(src, ctx)
+			var.ws_after = ctx.ws
 		end
-
-		local var = node:new_var(ctx.token_value)
-		var.ws_before = ctx.ws
-		ctx = next_token(src, ctx)
-		var.ws_after = ctx.ws
-		local decl = node:new_decl(type_id, {var})
+		local decl = node:new_decl(type_id, var and {var} or {})
 		decl.ws_before = ws_before_type
 		table.insert(params, decl)
 		if ctx.token == ',' then
@@ -1436,21 +1469,18 @@ function func_decl(src, ctx, dbg)
 	ctx = next_token(src, ctx)
 	local ws_before_body = ctx.ws
 
-	if ctx.token ~= '{' then
-		return "expected '{' in function declaration", ctx
+	if ctx.token ~= '{' and ctx.token ~= ';' then
+		return "expected '{' or ';' after function signature", ctx
 	end
-	body, ctx = statement(src, ctx, dbg .. "\t")
-	if type(body) == "string" then
-		return body, ctx
+	if ctx.token == '{' then
+		body, ctx = statement(src, ctx, dbg .. "\t")
+		if type(body) == "string" then
+			return body, ctx
+		end
+		body.ws_before = ws_before_body
 	end
-	body.ws_before = ws_before_body
 	if enbf_debug then print(dbg .. "tokens after body", ctx.token, ctx.token_value) end
 
-	-- грязный хак (фигурные скобки{} возвращают токен следующий за ними, но нам нужно вернуть })
-	ctx.i = ctx.prev.i
-	ctx.token = ctx.prev.token
-	ctx.token_value = ctx.prev.token_value
-	ctx.line = ctx.prev.line
 	return node:new_func(params, body), ctx
 end
 
@@ -1511,7 +1541,7 @@ function global_decl(src, ctx, dbg)
 
 	if enbf_debug then print(dbg .. "global decl", ctx.token, ctx.token_value) end
 
-	if ctx.token == tokens.id and ctx.token_value.name == "enum" then
+	--[[if ctx.token == tokens.id and ctx.token_value:has_mod("enum") then
 		ctx = next_token(src, ctx)
 		local ws_after_enum = ctx.ws
 		local ws_after_name = ""
@@ -1543,9 +1573,10 @@ function global_decl(src, ctx, dbg)
 		if ctx.token == ';' then
 			local next_ctx = next_token(src, ctx)
 			rnode.ws_after = rnode.ws_after .. ';' .. next_ctx.ws
+			ctx = next_token(src, ctx)
 		end
 		return rnode, ctx
-	end
+	end]]--
 
 	rnode, ctx = statement(src, ctx, dbg .. "\t")
 	if type(rnode) == "string" then
@@ -1555,6 +1586,7 @@ function global_decl(src, ctx, dbg)
 	if ctx.token == ';' then
 		local next_ctx = next_token(src, ctx)
 		rnode.ws_after = rnode.ws_after .. ';' .. next_ctx.ws
+		ctx = next_token(src, ctx)
 	end
 	
 	if enbf_debug then print(dbg .. "global decl returning", ctx.token, ctx.token_value) end

@@ -3,6 +3,7 @@ require "sub"
 require "utils"
 
 function init_bench_decls(file_name)
+	reset_identifiers()
 	local file = io.open("benchmarks/" .. file_name)
 	local src = file:read("*a")
 	_, lines = src:gsub("\n", "\n")
@@ -14,15 +15,17 @@ function init_bench_decls(file_name)
 	global_decls = {}
 	while true do
 		global_node, ctx = global_decl(src, ctx)
+		if type(global_node) == "string" then
+			print("Error on line " .. ctx.line .. ":\n" .. global_node)
+			os.exit(1)
+		end
 		table.insert(global_decls, global_node)
-		if ctx.i == nil then break end
-		ctx = next_token(src, ctx)
 		if ctx.i == nil then break end
 	end
 	return os.clock() - tbeg, chars, lines
 end
 
-local file_names = {"bench_linux_pfsm_wakeup.c", "bench_linux_ucon.c", "bench_linux_hpet_example.c", "bench_linux_xxhash.c", "bench_linux_mei_amt_version.c", "bench_linux_stm32_omm.c", "bench_linux_gpio_fan.c", "bench_linux_debug_core.c", "bench_linux_slicoss.c", "bench_linux_sd.c", "bench_linux_adm1026.c"}
+local file_names = {"adfs_dir.c", "bfs_inode.c", "ext2_xattr.c", "ext4_fast_commit.c", "fatent.c", "futex_pi.c", "gfs2_acl.c", "iomap_buffered-io.c", "kcsan_test.c", "kernel_uprobes.c", "kernfs_mount.c", "kernfs_symlink.c", "module_main.c", "netfs_buffered_write.c", "netfs_direct_read.c", "netfs_fscache_main.c", "power_snapshot.c", "proc_fd.c", "proc_inode.c", "sched_rt.c", "smb_server_asn1.c", "smb_server_auth.c", "squashfs_block.c", "ufs_inode.c", "ufs_super.c", "v9fs.c", "verity_hash_algs.c", "xfs_bmap_util.c", "xfs_buf.c"}
 local test_amt = 1000
 
 for _, v in ipairs(file_names) do

@@ -13,7 +13,7 @@ end
 function TestMultiDecl1:TestGlobalDeclTypes()
 	lu.assertEquals(global_decls[1]._type, nodes.typedef)
 	lu.assertEquals(global_decls[2]._type, nodes.decl)
-	lu.assertEquals(global_decls[3]._type, nodes.compound)
+	lu.assertEquals(global_decls[3]._type, nodes.decl)
 	lu.assertEquals(global_decls[4]._type, nodes.func)
 	lu.assertEquals(global_decls[5]._type, nodes.enum_decl)
 	lu.assertEquals(global_decls[6]._type, nodes.func)
@@ -52,7 +52,7 @@ function TestMultiDecl1:TestStructs()
 	lu.assertEquals(struct1val1[2]._type, nodes.num)
 	lu.assertEquals(struct1val1[2].value, 0)
 
-	local struct2 = global_decls[3]
+	local struct2 = global_decls[3].var_type
 	lu.assertTrue(struct2.name:has_mod("struct"))
 	lu.assertEquals(struct2.name.name, "neg_log_likelihood_ns_loss_args")
 	lu.assertEquals(#struct2.value, 1)

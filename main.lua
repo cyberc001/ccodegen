@@ -28,8 +28,6 @@ while true do
 	end
 	table.insert(global_decls, global_node)
 	if ctx.i == nil then break end
-	ctx = next_token(src, ctx)
-	if ctx.i == nil then break end
 end
 
 for _, fpath in ipairs(args.SCRIPT_FILES) do
