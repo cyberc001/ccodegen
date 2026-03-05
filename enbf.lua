@@ -184,7 +184,6 @@ function node:new_index(x, i)
 		return "(index, values\n" .. tostring(self.value[1]) .. ",\n\t" .. value2_prefix .. tostring(self.value[2]) .. "\n" .. self.dbg .. ")"
 	end,
 	_src = function(self)
-		print(self)
 		return (self.value[1] and self.value[1]:src() or "") .. self.ws_before_brackets .. "[" .. (self.value[2] and self.value[2]:src() or self.ws_before_brackets) .. self.ws_before_closing_bracket .. "]"
 	end
 	})
@@ -849,7 +848,8 @@ function statement(src, ctx, dbg)
 						return res, ctx
 					end
 					if name_token.name then
-						res.name = name_token.mods_ws[2] .. name_token.name
+						res.name = name_token.name
+						res.ws_after_enum = name_token.mods_ws[2]
 					end
 					res.ws_after_name = ws_after_type
 					return res, ctx

@@ -1,7 +1,9 @@
 require "tests.test_init"
-init_test_decls("multidecl1.c")
 
 TestMultiDecl1 = {}
+function TestMultiDecl1:setUp()
+	init_test_decls("multidecl1.c")
+end
 
 function TestMultiDecl1:TestSrc()
 	lu.assertTrue(test_src())
@@ -171,5 +173,3 @@ function TestMultiDecl1:TestEnums()
 	lu.assertEquals(enum2.value[5].value[2]._type, nodes.num)
 	lu.assertEquals(enum2.value[5].value[2].value, 0)
 end
-
-os.exit(lu.LuaUnit.run())

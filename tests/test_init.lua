@@ -9,6 +9,7 @@ function trim(s) -- http://lua-users.org/wiki/StringTrim
 end
 
 function init_test_decls(file_name)
+	reset_identifiers()
 	local file = io.open("tests/" .. file_name)
 	src = file:read("*all")
 	

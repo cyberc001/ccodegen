@@ -1,7 +1,9 @@
 require "tests.test_init"
-init_test_decls("singlefunc1.c")
 
 TestSingleFunc1 = {}
+function TestSingleFunc1:setUp()
+	init_test_decls("singlefunc1.c")
+end
 
 function TestSingleFunc1:TestSrc()
 	lu.assertTrue(test_src())
@@ -132,5 +134,3 @@ function TestSingleFunc1:TestDoWhileLoopHead()
 	lu.assertEquals(do_while.cond.value[1].value.name, "core_num")
 	lu.assertEquals(do_while.cond.value[2].value, 0)
 end
-
-os.exit(lu.LuaUnit.run())

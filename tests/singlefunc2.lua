@@ -1,7 +1,9 @@
 require "tests.test_init"
-init_test_decls("singlefunc2.c")
 
 TestSingleFunc2 = {}
+function TestSingleFunc2:setUp()
+	init_test_decls("singlefunc2.c")
+end
 
 function TestSingleFunc2:TestSrc()
 	lu.assertTrue(test_src())
@@ -156,5 +158,3 @@ function TestSingleFunc2:TestInnerSwitchCases()
 	lu.assertEquals(switch.cases[3].statements[3].value.name, "break")
 	lu.assertEquals(switch.cases[3].statements[4]._type, nodes.semicolon)
 end
-
-os.exit(lu.LuaUnit.run())

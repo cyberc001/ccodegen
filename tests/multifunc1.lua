@@ -1,7 +1,9 @@
 require "tests.test_init"
-init_test_decls("multifunc1.c")
 
 TestMultiFunc1 = {}
+function TestMultiFunc1:setUp()
+	init_test_decls("multifunc1.c")
+end
 
 function TestMultiFunc1:TestSrc()
 	lu.assertTrue(test_src())
@@ -176,5 +178,3 @@ function TestMultiFunc1:TestForLoopHeads()
 		lu.assertTrue(v.iter.op == tokens.add_assign or v.iter.op == tokens.sub_assign)
 	end
 end
-
-os.exit(lu.LuaUnit.run())
