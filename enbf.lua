@@ -185,7 +185,8 @@ function node:new_index(x, i)
 	end,
 	_src = function(self)
 		return (self.value[1] and self.value[1]:src() or "") .. self.ws_before_brackets .. "[" .. (self.value[2] and self.value[2]:src() or self.ws_before_brackets) .. self.ws_before_closing_bracket .. "]"
-	end
+	end,
+	get_children = _get_children_array
 	})
 end
 
@@ -317,6 +318,7 @@ function node:new_switch(value, cases)
 				table.insert(c, v2)
 			end
 		end
+		return c
 	end
 	})
 end
